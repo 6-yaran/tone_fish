@@ -492,7 +492,7 @@ function score3(f){
         + 2.5*(f.lowFrac - 0.3)
         + 3.0*f.creak;
   if(f.relLow!=null) s += 0.5*(1.5 - Math.max(-2, Math.min(4, f.relLow)));
-  if(f.relDur!=null) s += 1.0*(Math.min(1.6, f.relDur) - 1.05);
+  if(f.relDur!=null) s += 0.6*(Math.min(1.6, f.relDur) - 1.05);
   return s;
 }
 function classify(all){
@@ -527,10 +527,12 @@ function classify(all){
   for(let i=anchor-1;i>=0;i--)       v[i]=snap(v[i],v[i+1]);
   // 3. Median filter removes isolated bad frames
   v = v.map((_,i)=>median(v.slice(Math.max(0,i-2), i+3)));
-  // ...and if the whole syllable landed an octave away from this speaker's usual range, move it back
+  // ...and if the whole syllable landed an octave outside this speaker's range, move it back.
+  // Compare with the EDGES of the range, not its middle: a real Tone 3 sits far below the median
+  // (most syllables are high tones), and shifting it up an octave would turn it into a Tone 4.
   if(voiceHist.n >= 5){
-    const mid=pct(voiceHist.vals,0.5), m=median(v);
-    const shift = m-mid > 8 ? -12 : mid-m > 8 ? 12 : 0;
+    const lo=pct(voiceHist.vals,0.05), hi=pct(voiceHist.vals,0.95), m=median(v);
+    const shift = (m > hi+5 && m-12 >= lo-3) ? -12 : (m < lo-5 && m+12 <= hi+3) ? 12 : 0;
     if(shift) v = v.map(x=>x+shift);
   }
   // 4. If an end wasn't trimmed for being weak, trim 10% there (onset/offset pitch is unstable)
@@ -549,17 +551,30 @@ function classify(all){
   const relDur = known ? dur/median(voiceHist.durs) : null;
   const lowBand = mn + Math.max(0.7, 0.15*up);
   const lowFrac = wv.filter(x=>x<=lowBand).length / wv.length;
-  const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: known ? mn-spkLow : null, relDur};
+  // how high the syllable starts within this speaker's range: Tone 4 starts at the top, Tones 2 and 3 lower
+  const relStart = known ? start - spkMid : null;
+  const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: known ? mn-spkLow : null, relDur, relStart};
   let tone, s3=null;
   if(range < cfg.flat) tone=1;
   else {
     // Does the voice come back up after its lowest point? If not, it is a fall.
-    const rises = up >= Math.max(th3, 0.35*down) && !(maxPos < minPos && minPos > 0.85);
+    let rises = up >= Math.max(th3, 0.35*down) && !(maxPos < minPos && minPos > 0.85);
+    // A big fall from the top that only turns up a little at the very end (creak, or the voice
+    // trailing off) is still Tone 4. Tone 3 starts low and lingers at the bottom; Tone 4 does neither.
+    if(rises && maxPos < 0.25 && minPos > 0.45 && down >= 1.6*up){
+      if(known ? relStart > -1.5 : (down >= 2.5*up && lowFrac < 0.35)) rises = false;
+    }
     if(!rises){
       tone = 4;
-      // A short, low fall from the middle of the speaker's range (no high start) is a Tone 3 said
-      // without the final rise; Tone 4 starts from the top of the voice.
-      if(known && start <= spkMid && down < 4 && (creak > 0.1 || mn <= spkLow + 0.5)) tone = 3;
+      // A fall that starts in the lower half of the voice and stays at the bottom is a Tone 3 said
+      // without the final rise (very common); Tone 4 starts from the top of the voice.
+      if(known){
+        if(relStart <= -1 && (mn <= spkLow + 2 || creak > 0.1 || lowFrac >= 0.45)) tone = 3;
+        else if(lowFrac >= 0.55 && mn <= spkLow + 1.5) tone = 3;   // sits at the very bottom of the voice for a long time
+      }
+      else if(lowFrac >= 0.45 && minPos < 0.85) tone = 3;
+    } else if(down < 0.6 && minPos < 0.3){
+      tone = 2;   // rises from the start with no real dip: Tone 3 always drops first
     } else {
       s3 = score3(feats);
       tone = s3 > 0.3 ? 3 : 2;
@@ -636,7 +651,7 @@ function layout(){
 }
 layout();
 function newGame(){
-  game={ dist:0, obs:[], nextX:W+120, expLane:2, targetRef:null,
+  game={ dist:0, obs:[], nextX:W+120, expLane:2, targetRef:null, recentWords:[],
     bird:{lane:2, y:laneY(2), vy:0, anim:null, dashT:0},
     hearts:5, inv:0, score:0, streak:0, best:0, shake:0,
     particles:[], floats:[], clouds:[...Array(14)].map(()=>({x:Math.random()*W, y:20+Math.random()*(GROUND-20), s:0.2+Math.random()*0.8})),   // rising bubbles
@@ -652,7 +667,7 @@ function fit(o, L){
   if(t===2 && L===0) t=4;
   if(t===4 && L===LANES-1) t=2;
   if(t===3 && L===LANES-1) t=2;       // no room to dip from the bottom lane
-  if(t!==o.tone || !o.word){ o.tone=t; o.word=pick(WORDS[t]); o.answered=false; }
+  if(t!==o.tone || !o.word){ o.tone=t; o.word=pickWord(t); o.answered=false; }
   o.fromLane=L;
   if(t===2){ o.type='gate';  o.gap=L-1; o.w=56; }
   if(t===4){ o.type='gate';  o.gap=L+1; o.w=56; }
@@ -660,6 +675,15 @@ function fit(o, L){
   if(t===3){ o.type='rock';  o.lane=L; o.w=34; }   // rock blocks this lane and the one above: dip under it
   o.exitLane = o.type==='gate' ? o.gap : L;
   return o.exitLane;
+}
+// Pick a word for tone t that hasn't been used recently, so the same character doesn't come up
+// twice in a row (or again a few cards later). Each tone has 10 words, so there is always a choice left.
+function pickWord(t){
+  const recent=game.recentWords;
+  const pool=WORDS[t].filter(w=>!recent.includes(w[0]));
+  const w=pick(pool.length ? pool : WORDS[t]);
+  recent.push(w[0]); if(recent.length>8) recent.shift();
+  return w;
 }
 function spawn(){
   const o={ tone:pick([1,2,2,3,3,4,4]), x:game.nextX, passed:false, answered:false };
