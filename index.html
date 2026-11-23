@@ -1,0 +1,1287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tone Fish</title>
+<style>
+  :root{
+    --bg:#f4f1ea; --panel:#fffdf8; --ink:#2b2a28; --muted:#7a766e; --line:#e3ddd0;
+    --t1:#e5484d; --t2:#f08c00; --t3:#2f9e44; --t4:#3e63dd;
+    --ui-font:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Segoe UI",system-ui,sans-serif;
+    --zh-font:"PingFang SC","Microsoft YaHei","Noto Sans SC","Noto Sans CJK SC",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui-font)}
+  .zh{font-family:var(--zh-font)}
+  header{padding:14px 20px 4px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;max-width:1280px;margin:0 auto}
+  header h1{margin:0;font-size:24px;letter-spacing:.5px}
+  header span{color:var(--muted);font-size:14px;flex:1}
+  header select{align-self:center}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;padding:12px 20px 24px;max-width:1280px;margin:0 auto}
+  @media (max-width:900px){main{grid-template-columns:1fr;padding:12px 16px} header{padding:14px 16px 4px}}
+  #stageWrap{position:relative;border-radius:14px;overflow:hidden;box-shadow:0 2px 0 var(--line),0 8px 24px rgba(0,0,0,.08)}
+  #game{display:block;width:100%;height:auto;background:#2f9fcf;touch-action:manipulation}
+  #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(20,30,40,.45)}
+  #overlay.hidden{display:none}
+  .dialog{background:var(--panel);border-radius:14px;padding:22px 26px;max-width:540px;width:calc(100% - 32px);text-align:center;max-height:calc(100% - 24px);overflow:auto}
+  .dialog h2{margin:0 0 8px;font-size:22px}
+  .dialog p{margin:6px 0;color:var(--muted);font-size:14px;line-height:1.6}
+  .moves{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;text-align:left;margin:10px auto;max-width:360px;font-size:14px}
+  .row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+  button{font:inherit;border:0;border-radius:10px;padding:9px 16px;cursor:pointer;background:#2b2a28;color:#fff;font-size:15px}
+  button.ghost{background:#ece6da;color:var(--ink)}
+  button:disabled{opacity:.5;cursor:default}
+  select{font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+  aside{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .card h3{margin:0 0 8px;font-size:14px;color:var(--muted);font-weight:600}
+  #micBtn{width:100%;padding:12px;font-size:16px}
+  #micStatus{font-size:12px;color:var(--muted);margin-top:6px;min-height:16px}
+  #level{position:relative;height:8px;background:#ece6da;border-radius:4px;overflow:hidden;margin-top:8px}
+  #levelBar{height:100%;width:0;background:#2f9e44;transition:width .05s}
+  #gateMark{position:absolute;top:0;bottom:0;width:2px;background:#2b2a28;opacity:.55;left:0}
+  #pitch{width:100%;height:150px;display:block;background:#fbf8f2;border-radius:8px}
+  #detected{display:flex;align-items:center;gap:10px;margin-top:8px;min-height:40px}
+  #detTone{font-size:24px;font-weight:700;min-width:76px}
+  #detInfo{font-size:13px;color:var(--muted);line-height:1.4}
+  .legend{display:grid;grid-template-columns:auto auto 1fr;gap:8px 10px;align-items:center;font-size:14px}
+  .legend b{font-size:15px;white-space:nowrap}
+  .legend .ex{color:var(--muted);font-size:13px}
+  .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .keys button{padding:8px 0;font-size:14px}
+  label.sl{display:block;font-size:13px;margin:8px 0 2px;color:var(--muted)}
+  label.sl output{float:right;color:var(--ink);margin-left:8px}
+  input[type=range]{width:100%}
+  details summary{cursor:pointer;font-size:14px;color:var(--muted);font-weight:600}
+  .tip{font-size:12px;color:var(--muted);line-height:1.55;margin:8px 0 0}
+  /* tutorial coach bubble: bottom of the stage on wide screens, top on phones (the "Say" bar is at the bottom there) */
+  /* in-game pause / restart buttons, top-right of the play area */
+  #gameCtl{position:absolute;top:10px;right:10px;display:flex;gap:8px;z-index:6}
+  #gameCtl.hidden{display:none}
+  .ctl{width:42px;height:42px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:rgba(255,253,248,.92);color:#2b2a28;fill:#2b2a28;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+  .ctl:hover{background:#fff}
+  .ctl:active{transform:scale(.94)}
+  @media (max-width:700px){ .ctl{width:44px;height:44px} }
+  /* wide: floats to the right of the fish, above or below the glowing card (placed by positionCoach) */
+  #coach{position:absolute;left:28%;right:12px;bottom:13%;
+    background:rgba(255,253,248,.97);border:2px solid #f08c00;border-radius:14px;padding:10px 16px 4px;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);font-size:15px;line-height:1.55;text-align:center;z-index:5}
+  /* phones: sits right under the play area so it never covers the fish or the cards */
+  #stageWrap.narrow #coach{position:static;border-width:3px 0 0;border-radius:0;box-shadow:none;padding:10px 14px 4px;font-size:14.5px}
+  #coach.hidden{display:none}
+  #coach .say{font-size:22px;font-weight:700}
+  #coach small{color:var(--muted);font-size:12.5px}
+  #coachSkip{font-size:12px;padding:4px 8px;margin:2px 0 0}
+  .tips{text-align:left;margin:10px auto;max-width:420px;padding-left:20px;font-size:15px;line-height:1.6}
+  .tips li{margin:4px 0}
+  .bigScore{font-size:56px;font-weight:800;line-height:1.1;margin:4px 0 0;color:var(--ink)}
+  .bigScore small{display:block;font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.5px}
+  .row.main button{flex:1;min-width:140px;padding:12px 16px}
+  button.share{background:#f08c00}
+  button.link{background:none;color:var(--muted);text-decoration:underline;padding:8px;margin-top:6px;font-size:14px}
+  #shareMsg{min-height:20px;font-size:13px;color:#2f9e44;margin:6px 0 0}
+  #shareText{width:100%;margin-top:8px;font:inherit;font-size:13px;padding:8px;border-radius:8px;border:1px solid var(--line);resize:none}
+  table.stats{margin:10px auto 0;border-collapse:collapse;font-size:14px}
+  table.stats td,table.stats th{padding:4px 10px;border-bottom:1px solid var(--line)}
+  html{-webkit-text-size-adjust:100%}
+  button,select{touch-action:manipulation}
+
+  /* ---------- Phones ---------- */
+  @media (max-width:700px){
+    header{padding:10px 16px 2px;gap:4px 10px}
+    header h1{font-size:20px}
+    header span{order:3;flex-basis:100%;font-size:12px}
+    main{gap:10px;padding:8px 16px 20px}
+    #stageWrap{border-radius:12px}
+    /* most-used controls first, reference material after */
+    #micCard{order:1} #keysCard{order:2} #pitchCard{order:3} #legend{order:4} #settingsCard{order:5}
+    .keys{gap:8px}
+    .keys button{padding:14px 0;font-size:15px}
+    #micBtn{padding:14px}
+    #micStatus{font-size:13px}
+    .legend{font-size:15px}
+    .legend .ex{font-size:14px}
+    /* dialogs cover the whole screen so they are readable */
+    #overlay{position:fixed;z-index:10;padding:16px}
+    .dialog{padding:20px 18px;max-height:calc(100% - 16px)}
+    .dialog p{font-size:15px}
+    .moves{font-size:15px}
+    .dialog button,.dialog select{padding:12px 18px;font-size:16px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 data-i18n="title"></h1>
+  <span data-i18n="subtitle"></span>
+  <select id="lang" aria-label="Language">
+    <option value="ko">한국어</option>
+    <option value="en">English</option>
+  </select>
+</header>
+<main>
+  <section>
+    <div id="stageWrap">
+      <canvas id="game"></canvas>
+      <div id="gameCtl" class="hidden">
+        <button id="pauseBtn" class="ctl"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></button>
+        <button id="restartBtn" class="ctl"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
+      </div>
+      <div id="coach" class="hidden"><div id="coachText"></div><button class="link" id="coachSkip"></button></div>
+      <div id="overlay">
+        <div class="dialog" id="dlg"></div>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="card" id="micCard">
+      <button id="micBtn"></button>
+      <div id="level"><div id="levelBar"></div><div id="gateMark"></div></div>
+      <div id="micStatus"></div>
+    </div>
+
+    <div class="card" id="pitchCard">
+      <h3 data-i18n="pitchTitle"></h3>
+      <canvas id="pitch"></canvas>
+      <div id="detected"><div id="detTone">—</div><div id="detInfo"></div></div>
+    </div>
+
+    <div class="card legend" id="legend"></div>
+
+    <div class="card" id="keysCard">
+      <h3 data-i18n="keysTitle"></h3>
+      <div class="keys" id="keys"></div>
+    </div>
+
+    <details class="card" id="settingsCard">
+      <summary data-i18n="settings"></summary>
+      <label class="sl"><span data-i18n="sSens"></span><output id="o_sens"></output></label>
+      <input type="range" id="s_sens" min="1" max="10" step="1">
+      <label class="sl"><span data-i18n="sFlat"></span><output id="o_flat"></output></label>
+      <input type="range" id="s_flat" min="0.8" max="4" step="0.1">
+      <label class="sl"><span data-i18n="sMin"></span><output id="o_min"></output></label>
+      <input type="range" id="s_min" min="40" max="300" step="10">
+      <label class="sl"><span data-i18n="sEnd"></span><output id="o_end"></output></label>
+      <input type="range" id="s_end" min="80" max="400" step="10">
+      <p class="tip" data-i18n="tip"></p>
+    </details>
+  </aside>
+</main>
+
+<script>
+/* ============================================================
+   UI text (Korean / English). Chinese appears only as learning content.
+   ============================================================ */
+const I18N = {
+  ko: {
+    title:'Tone Fish',
+    subtitle:'중국어 성조를 소리 내어 말하면 물고기가 헤엄쳐요',
+    micOn:'🎤 마이크 켜기', micReady:'🎤 마이크 켜짐',
+    micHint:'마이크가 꺼져 있어요. 키보드 1–4로도 플레이할 수 있어요.',
+    micReadyHint:'중국어 한 음절을 말해 보고 음높이 곡선을 확인해 보세요.',
+    micErr:m=>`마이크를 열 수 없어요: ${m} (http://localhost 로 페이지를 열고 마이크 권한을 허용하세요)`,
+    pitchTitle:'실시간 음높이 (내 목소리)',
+    detIdle:'한 번에 한 음절씩 말하고 잠깐 멈추세요.',
+    recent:'최근 4초', lastSyl:'직전 음절',
+    keysTitle:'마이크가 없을 때: 버튼 / 키보드',
+    settings:'인식 설정 (인식이 잘 안 될 때 조정)',
+    sSens:'마이크 감도 (높을수록 멀리서도 인식)',
+    sFlat:'평탄 기준 (반음 · 높을수록 1성으로 판정되기 쉬움)',
+    sMin:'이보다 짧은 소리는 무시 (ms · 잡음 방지)',
+    sEnd:'음절이 끝났다고 보는 멈춤 길이 (ms)',
+    tip:'소리 크기가 아니라 음높이의 모양으로 판별해요. 1성은 높고 평평하게, 2성은 올라가게, 3성은 내려갔다 올라오게, 4성은 높은 데서 뚝 떨어지게 말하세요. 주변 소음에 맞춰 기준이 자동으로 조정돼요. 음량 막대의 검은 선을 넘으면 목소리로 인식해요.',
+    toneName:n=>`${n}성`,
+    action:{1:'앞으로 돌진 (산호벽 깨기)',2:'한 칸 위로',3:'내려갔다 올라오기 (암초 밑 통과)',4:'한 칸 아래로'},
+    moveShort:{1:'돌진해서 산호벽 깨기',2:'위로 한 칸',3:'암초 밑으로 통과',4:'아래로 한 칸'},
+    info:(d,r)=>`길이 ${d}ms · 음높이 변화 ${r} 반음`,
+    srcKey:'키보드', srcBtn:'버튼',
+    need:(t,w)=>`${t} 필요: ${w}`, smash:'쨍!',
+    score:'점수', say:'말하세요:',
+    menuP1:'장애물마다 중국어 글자가 붙어 있어요. <b>소리 내어 읽으면</b>, 성조가 맞을 때 물고기가 그에 맞는 동작을 해요.',
+    menuP2:'글자 카드에는 한자와 병음이 나오고, “말하세요” 안내 막대에는 뜻도 함께 나와요.',
+    menuP3:'한 번에 한 음절씩 말하고 잠깐 멈추세요. 마이크가 없으면 키보드 1–4, 스페이스바는 일시정지예요.',
+    slow:'느리게 (입문)', mid:'보통', fast:'빠르게', start:'게임 시작',
+    overTitle:'게임 종료', overScore:(s,b)=>`점수 <b>${s}</b> · 최장 연속 <b>${b}</b>`,
+    thTone:'성조', thSaid:'말한 횟수', thOk:'목표 글자 정답',
+    overTip:'정답이 가장 적은 성조를 더 연습해 보세요.',
+    again:'다시 하기', menu:'메뉴로',
+    scoreLabel:'점수', bestStreak:b=>`최장 연속 ${b}개`,
+    share:'친구에게 공유',
+    shareText:(s,b)=>`Tone Fish에서 ${s}점 받았어요! 🐟 (최장 연속 ${b}개) 중국어 성조, 너도 도전해 봐!`,
+    copied:'복사됐어요! 메신저에 붙여넣어 친구에게 보내세요.',
+    copyManual:'아래 글을 복사해서 친구에게 보내세요.',
+    cardTagline:'중국어 성조 연습 게임', cardAcc:'성조별 정답',
+    menuTiming:'⏱ <b>읽는 타이밍:</b> 카드 테두리가 <b>반짝이기 시작하면 바로</b> 읽으세요. 늦어도 물고기가 닿기 1초 전(시간 막대의 빨간 선)에는 읽기 시작해야 해요.',
+    tutorial:'튜토리얼', tutorialRec:'처음이라면 1분짜리 튜토리얼부터 해 보세요.', tutorialAgain:'튜토리얼 다시 보기',
+    shape:{1:'높고 평평하게',2:'아래에서 위로 올리며',3:'내려갔다가 다시 올리며',4:'위에서 뚝 떨어뜨리며'},
+    tutIntro:'물고기는 저절로 앞으로 헤엄쳐 가요.<br>오른쪽에서 글자 카드가 다가오면 알려 줄게요.',
+    tutNow1:'테두리가 <b>반짝이는 카드</b>가 지금 읽을 글자예요.<br><b>반짝이기 시작하면 바로 읽으세요!</b>',
+    tutNow2:'다음 카드가 반짝이기 시작했어요. <b>바로 지금이 읽을 타이밍이에요.</b><br><small>앞 장애물을 지나면 다음 카드가 곧바로 반짝여요.</small>',
+    tutNoFreeze:'이제부터는 멈추지 않아요! 반짝이면 바로 읽으세요.<br><small>안내 막대 아래 시간 막대가 빨간 선에 닿기 전에 읽기 시작해야 해요.</small>',
+    tutKeep:'반짝여요, 바로 읽기!',
+    tutWait:(k)=>`<small>읽을 때까지 기다릴게요. 마이크가 없으면 키보드 ${k}${(k===1||k===3)?'을':'를'} 누르세요.</small>`,
+    tutGood:'좋아요! 👍 물고기가 움직였죠?', tutGoodTime:'완벽한 타이밍이에요! 👍',
+    tutLate:'성공! 하지만 조금 늦었어요. 반짝이자마자 읽으면 훨씬 여유 있어요.',
+    tutMiss:'괜찮아요, 연습이라 하트가 줄지 않아요. 다음 카드는 반짝이자마자 읽어 보세요.',
+    tutWrong:(heard,need,shape)=>`${heard}으로 들렸어요. ${need}은 <b>${shape}</b> 읽어요. 다시 한번!`,
+    tutDoneTitle:'튜토리얼 완료! 🎉',
+    tutDoneTips:['카드 테두리가 <b>반짝이기 시작하면</b> 그때가 읽을 타이밍이에요.','늦어도 물고기가 닿기 <b>1초 전</b>(시간 막대의 빨간 선)에는 읽기 시작하세요.','한 번에 한 글자씩 또박또박 읽고 잠깐 멈추세요.'],
+    skipTut:'튜토리얼 건너뛰기',
+    pauseTitle:'일시정지', pauseP:'일시정지 중에도 말하면서 성조 인식을 연습할 수 있어요.', resume:'계속하기',
+    pauseBtn:'일시정지 (스페이스바)', restartBtn:'처음부터 다시 (R)', restart:'처음부터 다시',
+  },
+  en: {
+    title:'Tone Fish',
+    subtitle:'Speak Mandarin tones out loud to swim the fish through the reef',
+    micOn:'🎤 Turn on microphone', micReady:'🎤 Microphone on',
+    micHint:'Microphone is off. You can also play with keys 1–4.',
+    micReadyHint:'Say one Chinese syllable and watch your pitch curve.',
+    micErr:m=>`Can't open the microphone: ${m} (open the page via http://localhost and allow microphone access)`,
+    pitchTitle:'Live pitch (your voice)',
+    detIdle:'Say one syllable at a time, then pause briefly.',
+    recent:'Last 4 s', lastSyl:'Last syllable',
+    keysTitle:'No microphone? Buttons / keyboard',
+    settings:'Recognition settings (adjust if detection is off)',
+    sSens:'Mic sensitivity (higher = works from farther away)',
+    sFlat:'Level-tone threshold (semitones · higher = more Tone 1)',
+    sMin:'Ignore sounds shorter than (ms · filters noise)',
+    sEnd:'Pause that ends a syllable (ms)',
+    tip:'Detection uses the shape of your pitch, not loudness. Tone 1: high and level. Tone 2: rising. Tone 3: dips low, then rises. Tone 4: falls sharply from high. The threshold adapts to background noise automatically; anything past the black line on the level bar counts as voice.',
+    toneName:n=>`Tone ${n}`,
+    action:{1:'Dash forward (smash coral walls)',2:'Swim up one lane',3:'Dip down and back (pass under reef rocks)',4:'Swim down one lane'},
+    moveShort:{1:'dash and smash coral walls',2:'swim up one lane',3:'dip under reef rocks',4:'swim down one lane'},
+    info:(d,r)=>`${d} ms · pitch change ${r} semitones`,
+    srcKey:'keyboard', srcBtn:'button',
+    need:(t,w)=>`Needs ${t}: ${w}`, smash:'Smash!',
+    score:'Score', say:'Say:',
+    menuP1:'Every obstacle carries a Chinese character. <b>Read it out loud</b>: if your tone is right, the fish makes the matching move.',
+    menuP2:'Cards show the character and its pinyin; the “Say:” bar also shows its meaning.',
+    menuP3:'Say one syllable at a time and pause briefly. No microphone? Use keys 1–4. Space pauses.',
+    slow:'Slow (beginner)', mid:'Normal', fast:'Fast', start:'Start game',
+    overTitle:'Game over', overScore:(s,b)=>`Score <b>${s}</b> · Best streak <b>${b}</b>`,
+    thTone:'Tone', thSaid:'Times said', thOk:'Correct on target',
+    overTip:'Practice the tone with the fewest correct answers.',
+    again:'Play again', menu:'Menu',
+    scoreLabel:'SCORE', bestStreak:b=>`Best streak: ${b}`,
+    share:'Share with friends',
+    shareText:(s,b)=>`I scored ${s} in Tone Fish! 🐟 (best streak ${b}) Can you beat me at Mandarin tones?`,
+    copied:'Copied! Paste it into a chat to send to your friends.',
+    copyManual:'Copy the text below and send it to your friends.',
+    cardTagline:'Mandarin tone practice game', cardAcc:'Correct by tone',
+    menuTiming:'⏱ <b>When to speak:</b> read a card <b>as soon as its border starts glowing</b>. Start no later than 1 second before the fish reaches it (the red tick on the timer bar).',
+    tutorial:'Tutorial', tutorialRec:'First time? Try the 1-minute tutorial first.', tutorialAgain:'Replay tutorial',
+    shape:{1:'high and level',2:'rising from low to high',3:'dipping down, then back up',4:'dropping sharply from high'},
+    tutIntro:'The fish swims forward by itself.<br>I\'ll tell you when a word card comes in from the right.',
+    tutNow1:'The card with the <b>glowing border</b> is the one to read.<br><b>Read it as soon as it starts glowing!</b>',
+    tutNow2:'The next card just started glowing. <b>That is your moment to read it.</b><br><small>As soon as you pass an obstacle, the next card lights up.</small>',
+    tutNoFreeze:'From now on the game won\'t stop! Read as soon as a card glows.<br><small>Start before the timer bar under the "Say:" box reaches the red tick.</small>',
+    tutKeep:'It\'s glowing: read it now!',
+    tutWait:(k)=>`<small>I'll wait until you read it. No microphone? Press key ${k}.</small>`,
+    tutGood:'Nice! 👍 See the fish move?', tutGoodTime:'Perfect timing! 👍',
+    tutLate:'Made it, but a little late. Reading the moment it glows gives you plenty of time.',
+    tutMiss:'No problem: hearts don\'t drop in practice. Read the next card the moment it glows.',
+    tutWrong:(heard,need,shape)=>`That sounded like ${heard}. ${need} goes <b>${shape}</b>. Try again!`,
+    tutDoneTitle:'Tutorial complete! 🎉',
+    tutDoneTips:['When a card\'s border <b>starts glowing</b>, that\'s your cue to read it.','Start reading no later than <b>1 second</b> before the fish reaches it (the red tick on the timer bar).','Read one syllable at a time, clearly, then pause briefly.'],
+    skipTut:'Skip tutorial',
+    pauseTitle:'Paused', pauseP:'You can keep speaking while paused to practice tone detection.', resume:'Resume',
+    pauseBtn:'Pause (Space)', restartBtn:'Restart (R)', restart:'Restart',
+  },
+};
+let lang = 'en';
+try { lang = localStorage.getItem('toneFishLang') || ''; } catch(e) { lang=''; }
+if(!I18N[lang]) lang = (navigator.language||'').toLowerCase().startsWith('ko') ? 'ko' : 'en';
+const L = () => I18N[lang];
+const toneName = t => L().toneName(t);
+
+/* ============================================================
+   Tones & practice words: [character, pinyin, {ko, en} meaning]
+   ============================================================ */
+const TONES = {
+  1:{color:'#e5484d', icon:'→'},
+  2:{color:'#f08c00', icon:'↑'},
+  3:{color:'#2f9e44', icon:'↘↗'},
+  4:{color:'#3e63dd', icon:'↓'},
+};
+const w = (c,p,ko,en) => [c,p,{ko,en}];
+const WORDS = {
+  1:[w('飞','fēi','날다','fly'),w('天','tiān','하늘','sky'),w('高','gāo','높다','tall'),w('风','fēng','바람','wind'),w('书','shū','책','book'),
+     w('花','huā','꽃','flower'),w('山','shān','산','mountain'),w('猫','māo','고양이','cat'),w('星','xīng','별','star'),w('杯','bēi','컵','cup')],
+  2:[w('来','lái','오다','come'),w('云','yún','구름','cloud'),w('鱼','yú','물고기','fish'),w('茶','chá','차','tea'),w('爬','pá','기어오르다','climb'),
+     w('红','hóng','빨갛다','red'),w('人','rén','사람','person'),w('羊','yáng','양','sheep'),w('学','xué','배우다','study'),w('门','mén','문','door')],
+  3:[w('好','hǎo','좋다','good'),w('水','shuǐ','물','water'),w('马','mǎ','말','horse'),w('你','nǐ','너','you'),w('雨','yǔ','비','rain'),
+     w('小','xiǎo','작다','small'),w('米','mǐ','쌀','rice'),w('狗','gǒu','개','dog'),w('手','shǒu','손','hand'),w('草','cǎo','풀','grass')],
+  4:[w('去','qù','가다','go'),w('下','xià','아래','down'),w('大','dà','크다','big'),w('树','shù','나무','tree'),w('月','yuè','달','moon'),
+     w('看','kàn','보다','look'),w('爱','ài','사랑하다','love'),w('四','sì','넷','four'),w('路','lù','길','road'),w('菜','cài','채소','vegetable')],
+};
+const pick = a => a[Math.floor(Math.random()*a.length)];
+const meaning = word => word[2][lang];
+// Canvas font: Chinese fonts first so characters use Chinese glyph forms; Hangul falls back to Korean fonts.
+const CF = '"PingFang SC","Microsoft YaHei","Noto Sans SC","Apple SD Gothic Neo","Malgun Gothic",sans-serif';
+
+/* ============================================================
+   Recognition settings
+   ============================================================ */
+const cfg = { sens:7, flat:1.6, minMs:100, endMs:160 };
+// Adaptive voice gate: track the background-noise level and treat anything clearly above it as voice.
+// Sensitivity 1 → voice must be 5× the noise; 10 → 1.6×.
+let noiseFloor = 0.002, gate = 0.006;
+const gateMult = () => 5 - (cfg.sens-1)*(3.4/9);
+function updateGate(){ gate = Math.min(0.05, Math.max(0.0015, noiseFloor*gateMult())); }
+function bindSlider(id, key, fmt){
+  const s=document.getElementById('s_'+id), o=document.getElementById('o_'+id);
+  s.value=cfg[key]; o.textContent=fmt(cfg[key]);
+  s.oninput=()=>{cfg[key]=parseFloat(s.value); o.textContent=fmt(cfg[key]);};
+}
+bindSlider('sens','sens',v=>v+'');
+bindSlider('flat','flat',v=>v.toFixed(1));
+bindSlider('min','minMs',v=>v+'');
+bindSlider('end','endMs',v=>v+'');
+
+/* ============================================================
+   Side panel: legend & buttons
+   ============================================================ */
+const legend=document.getElementById('legend'), keys=document.getElementById('keys');
+function renderLegend(){
+  legend.innerHTML='';
+  for (const t of [1,2,3,4]){
+    const T=TONES[t];
+    const ex=WORDS[t].slice(0,3).map(x=>`<span class="zh" lang="zh-CN">${x[0]}</span> ${x[1]} (${meaning(x)})`).join(' · ');
+    legend.insertAdjacentHTML('beforeend',
+      `<b style="color:${T.color}">${toneName(t)}</b><span style="color:${T.color};font-weight:700">${T.icon}</span>
+       <div>${L().action[t]}<div class="ex">${ex}</div></div>`);
+  }
+}
+function renderKeys(){
+  keys.innerHTML='';
+  [1,2,3,4].forEach(t=>{
+    const b=document.createElement('button');
+    b.textContent=t+' · '+toneName(t); b.style.background=TONES[t].color;
+    b.onclick=()=>applyTone(t,'btn'); keys.appendChild(b);
+  });
+}
+
+/* ============================================================
+   Pitch detection (YIN)
+   ============================================================ */
+let audioCtx=null, analyser=null, abuf=null, micOn=false, level=0, micErrMsg=null;
+const yinD = new Float32Array(1200);
+function yin(buf, sr){
+  const minF=70, maxF=550;
+  const maxTau=Math.min(Math.floor(sr/minF), yinD.length-1), minTau=Math.floor(sr/maxF);
+  const N=buf.length-maxTau;
+  if (N<200) return null;
+  for(let tau=1; tau<=maxTau; tau++){
+    let s=0;
+    for(let i=0;i<N;i++){ const x=buf[i]-buf[i+tau]; s+=x*x; }
+    yinD[tau]=s;
+  }
+  // cumulative mean normalized difference
+  yinD[0]=1; let run=0;
+  for(let tau=1; tau<=maxTau; tau++){ run+=yinD[tau]; yinD[tau]=run? yinD[tau]*tau/run : 1; }
+  // First dip under 0.2 (standard YIN). A voice farther from the mic carries more room echo and
+  // noise, so if nothing clears 0.2, accept the deepest dip as long as it is still clearly periodic.
+  let tau=-1;
+  for(let t=minTau; t<=maxTau; t++){
+    if(yinD[t]<0.2){ while(t+1<=maxTau && yinD[t+1]<yinD[t]) t++; tau=t; break; }
+  }
+  if(tau<0){
+    let best=minTau; for(let t=minTau+1; t<=maxTau; t++) if(yinD[t]<yinD[best]) best=t;
+    if(yinD[best]<0.32) tau=best; else return null;
+  }
+  // parabolic interpolation
+  let bt=tau;
+  if(tau>1 && tau<maxTau){
+    const a=yinD[tau-1], b=yinD[tau], c=yinD[tau+1], d=a+c-2*b;
+    if(d) bt = tau + (a-c)/(2*d);
+  }
+  return sr/bt;
+}
+
+const micBtn=document.getElementById('micBtn'), micStatus=document.getElementById('micStatus');
+function renderMic(){
+  micBtn.textContent = micOn ? L().micReady : L().micOn;
+  micBtn.disabled = micOn;
+  micStatus.textContent = micErrMsg ? L().micErr(micErrMsg) : (micOn ? L().micReadyHint : L().micHint);
+}
+micBtn.onclick = async ()=>{
+  if(micOn) return;
+  try{
+    // Auto gain lifts a quiet / distant voice; noise suppression removes steady fan or traffic hum.
+    // Neither changes pitch, which is all the tone detector looks at.
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:true,autoGainControl:true}});
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const src = audioCtx.createMediaStreamSource(stream);
+    // Keep only the voice-pitch band: cut rumble below 70 Hz and hiss above 1.5 kHz
+    const hp = audioCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=70;
+    const lp = audioCtx.createBiquadFilter(); lp.type='lowpass';  lp.frequency.value=1500;
+    analyser = audioCtx.createAnalyser(); analyser.fftSize=2048;
+    src.connect(hp); hp.connect(lp); lp.connect(analyser);
+    abuf = new Float32Array(analyser.fftSize);
+    micOn=true; micErrMsg=null;
+  }catch(e){
+    micErrMsg = e.message || String(e);
+  }
+  renderMic();
+};
+
+/* ---------- Split continuous pitch into syllables ---------- */
+const seg={active:false, pts:[], start:0, last:0};
+const recent=[];          // pitch points from the last few seconds (live plot)
+let lastContour=null;     // contour of the last syllable
+function processAudio(now){
+  analyser.getFloatTimeDomainData(abuf);
+  processFrame(abuf, audioCtx.sampleRate, now);
+}
+function processFrame(buf, sr, now){
+  let rms=0; for(let i=0;i<buf.length;i++) rms+=buf[i]*buf[i];
+  rms=Math.sqrt(rms/buf.length);
+  level = level*0.7 + rms*0.3;
+  updateGate();
+  let st=null;
+  if(rms>gate){
+    const f=yin(buf, sr);
+    if(f && f>70 && f<550) st = 12*Math.log2(f/55);   // semitone scale
+  }
+  // Learn the background level while nobody is speaking: drop quickly to quieter levels,
+  // rise slowly (so a long syllable is never mistaken for noise). Steady non-voice sound
+  // above the gate (a fan, traffic) also slowly raises the floor.
+  if(!seg.active && st===null){
+    const rate = rms < noiseFloor ? 0.2 : (rms < gate ? 0.02 : 0.004);
+    noiseFloor = Math.min(0.02, Math.max(0.0003, noiseFloor + (rms-noiseFloor)*rate));
+  }
+  if(st!==null){
+    recent.push({t:now, st});
+    if(!seg.active){ seg.active=true; seg.pts=[]; seg.start=now; }
+    seg.pts.push({t:now, st, rms}); seg.last=seg.lastPitch=now;
+  } else if(seg.active && rms>gate){
+    // Voice is still sounding but has no clear pitch: usually the creaky low part of Tone 3.
+    // Keep the syllable going instead of cutting it in two (the rising half alone would look like Tone 2).
+    seg.pts.push({t:now, st:null, rms}); seg.last=now;
+  }
+  if(seg.active && (now-seg.last>cfg.endMs || now-seg.lastPitch>450 || now-seg.start>1500)) finishSeg();
+  while(recent.length && now-recent[0].t>4000) recent.shift();
+}
+function finishSeg(){
+  seg.active=false;
+  const r=classify(seg.pts);
+  if(r){ lastContour=r; applyTone(r.tone,'voice',r); }
+}
+
+/* ---------- Tone classification from pitch-contour shape ---------- */
+const median = a => { const s=[...a].sort((x,y)=>x-y); return s[s.length>>1]; };
+const mean = a => a.reduce((x,y)=>x+y,0)/a.length;
+// The speaker's own pitch range and syllable length, learned from recent syllables.
+// Tone 3 sits at the bottom of a speaker's range; Tone 2 starts from the middle.
+const voiceHist={vals:[], durs:[], n:0};
+function rememberVoice(v, dur){
+  voiceHist.vals.push(...v); if(voiceHist.vals.length>500) voiceHist.vals.splice(0, voiceHist.vals.length-500);
+  voiceHist.durs.push(dur); if(voiceHist.durs.length>12) voiceHist.durs.shift();
+  voiceHist.n++;
+}
+function pct(arr,p){ const s=[...arr].sort((x,y)=>x-y); return s[Math.min(s.length-1, Math.floor(p*s.length))]; }
+// Tone 3 vs Tone 2 for a contour that ends higher than its lowest point. Positive = Tone 3.
+// Uses what listeners use: how late the turning point comes, how far the voice first drops,
+// how long it stays low (often creaky), whether that low point is the speaker's floor, and length.
+function score3(f){
+  let s = 3.0*(f.minPos - 0.42)
+        + 0.6*(Math.min(f.down,4) - 1.0)
+        + 2.5*(f.lowFrac - 0.3)
+        + 3.0*f.creak;
+  if(f.relLow!=null) s += 0.5*(1.5 - Math.max(-2, Math.min(4, f.relLow)));
+  if(f.relDur!=null) s += 1.0*(Math.min(1.6, f.relDur) - 1.05);
+  return s;
+}
+function classify(all){
+  // Keep frames from the first to the last pitched frame. Unpitched frames in between (creak)
+  // are filled with the lower neighbour so the contour keeps its real timing and its low stretch.
+  const f0=all.findIndex(p=>p.st!=null);
+  let f1=all.length-1; while(f1>=0 && all[f1].st==null) f1--;
+  if(f0<0) return null;
+  const span=all.slice(f0, f1+1);
+  const creak = span.filter(p=>p.st==null).length / span.length;
+  const pts = span.map((p,i)=>{
+    if(p.st!=null) return p;
+    let l=i-1; while(span[l].st==null) l--;
+    let r=i+1; while(span[r].st==null) r++;
+    return {t:p.t, rms:p.rms, st:Math.min(span[l].st, span[r].st), filled:true};
+  });
+  const dur = pts.length ? pts[pts.length-1].t - pts[0].t + 16 : 0;
+  if(pts.length-Math.round(creak*pts.length)<4 || dur<cfg.minMs) return null;   // too short (cough, noise): ignore
+  // 1. Drop weak frames at the start/end: the quiet, creaky end of Tone 4 gives the least reliable pitch
+  const peak=Math.max(...pts.map(p=>p.rms ?? 1));
+  let a=0, b=pts.length-1;
+  while(a<b && (pts[a].rms ?? 1) < peak*0.15) a++;
+  while(b>a && (pts[b].rms ?? 1) < peak*0.3) b--;
+  let body = pts.slice(a, b+1); if(body.length<4) body=pts;
+  // 2. Fix octave errors: walk out from the most typical frame (the one nearest the median pitch,
+  //    never an outlier); real pitch can't jump >6 semitones in 16 ms
+  let v = body.map(p=>p.st);
+  const vMed=median(v);
+  let anchor=0; v.forEach((x,i)=>{ if(Math.abs(x-vMed)<Math.abs(v[anchor]-vMed)) anchor=i; });
+  const snap=(x,ref)=>[x,x-12,x+12,x-24,x+24].reduce((best,c)=>Math.abs(c-ref)<Math.abs(best-ref)?c:best);
+  for(let i=anchor+1;i<v.length;i++) v[i]=snap(v[i],v[i-1]);
+  for(let i=anchor-1;i>=0;i--)       v[i]=snap(v[i],v[i+1]);
+  // 3. Median filter removes isolated bad frames
+  v = v.map((_,i)=>median(v.slice(Math.max(0,i-2), i+3)));
+  // ...and if the whole syllable landed an octave away from this speaker's usual range, move it back
+  if(voiceHist.n >= 5){
+    const mid=pct(voiceHist.vals,0.5), m=median(v);
+    const shift = m-mid > 8 ? -12 : mid-m > 8 ? 12 : 0;
+    if(shift) v = v.map(x=>x+shift);
+  }
+  // 4. If an end wasn't trimmed for being weak, trim 10% there (onset/offset pitch is unstable)
+  const cut=Math.floor(v.length*0.1);
+  const cutA = a>0 ? 0 : cut, cutB = b<pts.length-1 ? 0 : cut;
+  let wv = v.slice(cutA, v.length-cutB); if(wv.length<3) wv=v;
+  const k=Math.max(1, Math.floor(wv.length*0.25));
+  const start=mean(wv.slice(0,k)), end=mean(wv.slice(-k));
+  let mi=0, xi=0;
+  for(let i=0;i<wv.length;i++){ if(wv[i]<wv[mi]) mi=i; if(wv[i]>wv[xi]) xi=i; }
+  const mn=wv[mi], mx=wv[xi], range=mx-mn, minPos=mi/(wv.length-1), maxPos=xi/(wv.length-1);
+  const down=start-mn, up=end-mn, th3=Math.max(0.9, cfg.flat*0.6);
+  // speaker-relative features (only once a few syllables have been heard)
+  const known = voiceHist.n >= 5;
+  const spkLow = known ? pct(voiceHist.vals,0.1) : null, spkMid = known ? pct(voiceHist.vals,0.5) : null;
+  const relDur = known ? dur/median(voiceHist.durs) : null;
+  const lowBand = mn + Math.max(0.7, 0.15*up);
+  const lowFrac = wv.filter(x=>x<=lowBand).length / wv.length;
+  const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: known ? mn-spkLow : null, relDur};
+  let tone, s3=null;
+  if(range < cfg.flat) tone=1;
+  else {
+    // Does the voice come back up after its lowest point? If not, it is a fall.
+    const rises = up >= Math.max(th3, 0.35*down) && !(maxPos < minPos && minPos > 0.85);
+    if(!rises){
+      tone = 4;
+      // A short, low fall from the middle of the speaker's range (no high start) is a Tone 3 said
+      // without the final rise; Tone 4 starts from the top of the voice.
+      if(known && start <= spkMid && down < 4 && (creak > 0.1 || mn <= spkLow + 0.5)) tone = 3;
+    } else {
+      s3 = score3(feats);
+      tone = s3 > 0.3 ? 3 : 2;
+    }
+  }
+  rememberVoice(wv, dur);
+  return {tone, contour:wv, dur, range, s3, feats};
+}
+
+/* ---------- Live pitch plot ---------- */
+const pc=document.getElementById('pitch'), px=pc.getContext('2d');
+function sizePitch(){ const d=devicePixelRatio||1; pc.width=pc.clientWidth*d; pc.height=pc.clientHeight*d; px.setTransform(d,0,0,d,0,0); }
+function drawPitch(now){
+  const W=pc.clientWidth, H=pc.clientHeight;
+  px.clearRect(0,0,W,H);
+  px.strokeStyle='#ece6da'; px.lineWidth=1;
+  for(let i=1;i<4;i++){ px.beginPath(); px.moveTo(0,H*i/4); px.lineTo(W,H*i/4); px.stroke(); }
+  const plotW = W*0.62;
+  if(recent.length){
+    const c=median(recent.map(p=>p.st));
+    px.fillStyle='#2b2a28';
+    for(const p of recent){
+      const x=plotW*(1-(now-p.t)/4000), y=H/2-(p.st-c)*H/24;
+      px.fillRect(x-1.5,y-1.5,3,3);
+    }
+  }
+  px.fillStyle='#b9b2a3'; px.font='11px '+CF;
+  px.fillText(L().recent, 6, 14);
+  // contour of the last syllable
+  px.strokeStyle='#e3ddd0'; px.beginPath(); px.moveTo(plotW+6,8); px.lineTo(plotW+6,H-8); px.stroke();
+  px.fillText(L().lastSyl, plotW+14, 14);
+  if(lastContour){
+    const v=lastContour.contour, c=mean(v), x0=plotW+16, ww=W-x0-8;
+    px.strokeStyle=TONES[lastContour.tone].color; px.lineWidth=3; px.lineJoin='round'; px.beginPath();
+    v.forEach((s,i)=>{ const x=x0+ww*i/Math.max(1,v.length-1), y=H/2-(s-c)*H/16; i?px.lineTo(x,y):px.moveTo(x,y); });
+    px.stroke();
+  }
+}
+
+/* ============================================================
+   Game
+   ============================================================ */
+const cv=document.getElementById('game'), ctx=cv.getContext('2d'), stageWrap=document.getElementById('stageWrap');
+// World size in logical pixels. Recomputed from the screen by layout():
+// desktop ≈ 800×480; phones get a narrower, taller world so text never drops below 75% size.
+let W=800, H=480, GROUND=430, LANE_H=(430-16)/5, BX=170, NARROW=false;
+const TOP=16, LANES=5, BR=14;
+const laneY = l => TOP + LANE_H*(l+0.5);
+const laneTop = l => TOP + LANE_H*l, laneBot = l => TOP + LANE_H*(l+1);
+
+let state='menu', speedBase=110, game;
+function layout(){
+  const cssW = stageWrap.clientWidth || 800;
+  const vw = innerWidth, vh = innerHeight, portrait = vh > vw;
+  let s = Math.min(1.6, Math.max(0.75, cssW/800));     // screen px per world px
+  let w = cssW/s;
+  const headerH = Math.min(stageWrap.getBoundingClientRect().top + scrollY, 100);
+  // phones held upright (or any narrow window): taller play area; otherwise 5:3 like desktop
+  const tall = cssW < 560 || (portrait && cssW < 760);
+  let cssH = tall ? cssW*1.2 : cssW*0.6;
+  cssH = Math.min(cssH, tall ? Math.max(300, vh*0.62) : Math.max(260, vh - headerH - 12));
+  let h = cssH/s;
+  if(h < 400){ s = cssH/400; h = 400; w = cssW/s; }   // short landscape phones: zoom out instead
+  W = Math.round(w); H = Math.round(h); NARROW = tall;
+  stageWrap.classList.toggle('narrow', NARROW);
+  GROUND = H - (NARROW ? 74 : 50);
+  LANE_H = (GROUND-TOP)/LANES;
+  BX = Math.round(Math.max(90, Math.min(170, W*0.21)));
+  const d = devicePixelRatio || 1;
+  cv.style.height = cssH+'px';
+  cv.width = Math.round(cssW*d); cv.height = Math.round(cssH*d);
+  ctx.setTransform(s*d,0,0,s*d,0,0);
+  if(game){ const b=game.bird; b.base = b.y = laneY(b.lane); }
+}
+layout();
+function newGame(){
+  game={ dist:0, obs:[], nextX:W+120, expLane:2, targetRef:null,
+    bird:{lane:2, y:laneY(2), vy:0, anim:null, dashT:0},
+    hearts:5, inv:0, score:0, streak:0, best:0, shake:0,
+    particles:[], floats:[], clouds:[...Array(14)].map(()=>({x:Math.random()*W, y:20+Math.random()*(GROUND-20), s:0.2+Math.random()*0.8})),   // rising bubbles
+    stats:{1:[0,0],2:[0,0],3:[0,0],4:[0,0]}, t:0 };
+}
+newGame();
+
+// Lay out obstacle o so that, from lane L, exactly tone o.tone gets the fish through.
+// If that tone is impossible from L (e.g. can't go up from the top lane), switch to a possible one.
+function fit(o, L){
+  if(o.fromLane===L) return o.exitLane;
+  let t=o.tone;
+  if(t===2 && L===0) t=4;
+  if(t===4 && L===LANES-1) t=2;
+  if(t===3 && L===LANES-1) t=2;       // no room to dip from the bottom lane
+  if(t!==o.tone || !o.word){ o.tone=t; o.word=pick(WORDS[t]); o.answered=false; }
+  o.fromLane=L;
+  if(t===2){ o.type='gate';  o.gap=L-1; o.w=56; }
+  if(t===4){ o.type='gate';  o.gap=L+1; o.w=56; }
+  if(t===1){ o.type='glass'; o.w=22; }
+  if(t===3){ o.type='rock';  o.lane=L; o.w=34; }   // rock blocks this lane and the one above: dip under it
+  o.exitLane = o.type==='gate' ? o.gap : L;
+  return o.exitLane;
+}
+function spawn(){
+  const o={ tone:pick([1,2,2,3,3,4,4]), x:game.nextX, passed:false, answered:false };
+  if(tut){                                   // tutorial: a fixed, short sequence covering every tone
+    if(tut.spawned>=TUT_SEQ.length){ game.nextX=Infinity; return; }
+    o.tone=TUT_SEQ[tut.spawned]; o.tutIdx=tut.spawned++;
+  }
+  game.expLane = fit(o, game.expLane);
+  game.obs.push(o);
+  game.nextX += tut ? 380 : 320 + Math.random()*80;
+}
+// seconds until the fish reaches obstacle o at normal speed
+const remOf = o => (o.x - game.dist - (BX+BR)) / (speedBase || 1);
+const LATE_S = 1.0;   // start reading at least this long before the fish arrives
+// When an obstacle becomes the current target, re-fit it and everything after it to the fish's real lane
+function replanFrom(o){
+  let Ln=game.bird.lane, started=false;
+  for(const q of game.obs){
+    if(q===o) started=true;
+    if(!started) continue;
+    const before=q.fromLane;
+    Ln=fit(q,Ln);
+    if(before!==q.fromLane){ const sx=q.x-game.dist; if(sx<W) burst(sx+q.w/2, laneY(Ln), '#ffffff', 10); }
+  }
+  game.expLane=Ln;
+}
+
+function rectsOf(o, sx){
+  if(o.type==='gate') return [{x:sx,y:0,w:o.w,h:laneTop(o.gap)-6},{x:sx,y:laneBot(o.gap)+6,w:o.w,h:GROUND-laneBot(o.gap)-6}];
+  if(o.type==='glass') return o.broken?[]:[{x:sx,y:0,w:o.w,h:GROUND}];
+  if(o.type==='rock'){  const top=laneTop(Math.max(0,o.lane-1))+6; return [{x:sx,y:top,w:o.w,h:laneBot(o.lane)-4-top}]; }
+}
+function hitCircle(cx,cy,r,R){
+  const nx=Math.max(R.x,Math.min(cx,R.x+R.w)), ny=Math.max(R.y,Math.min(cy,R.y+R.h));
+  return (cx-nx)**2+(cy-ny)**2 < r*r;
+}
+function currentTarget(){
+  return game.obs.find(o=>!o.passed && o.x-game.dist+o.w > BX-BR);
+}
+
+/* ---------- Tone → action ---------- */
+const detTone=document.getElementById('detTone'), detInfo=document.getElementById('detInfo');
+let lastDet=null;
+function renderDet(){
+  if(!lastDet){ detTone.textContent='—'; detTone.style.color=''; detInfo.textContent=L().detIdle; return; }
+  const {tone, source, info} = lastDet, T=TONES[tone];
+  detTone.textContent=toneName(tone); detTone.style.color=T.color;
+  const extra = info ? L().info(Math.round(info.dur), info.range.toFixed(1))
+              : (source==='key' ? L().srcKey : L().srcBtn);
+  detInfo.innerHTML = `${T.icon} ${L().action[tone]}<br>${extra}`;
+}
+function applyTone(tone, source, info){
+  lastDet={tone, source, info}; renderDet();
+  if(state!=='play') return;
+
+  const T=TONES[tone], b=game.bird, tgt=currentTarget();
+  game.stats[tone][0]++;
+  if(tgt && !tgt.answered){
+    const wd=`${tgt.word[0]} ${tgt.word[1]} = ${meaning(tgt.word)}`;
+    if(tgt.tone===tone){
+      tgt.answered=true; game.stats[tone][1]++; floatText('✓ '+wd, T.color);
+      if(tut){
+        const wasFrozen=tut.frozen; tut.frozen=false;
+        coach(wasFrozen ? L().tutGood : (remOf(tgt) < LATE_S ? L().tutLate : L().tutGoodTime));
+      }
+    } else {
+      floatText(L().need(toneName(tgt.tone), `${tgt.word[0]} ${tgt.word[1]}`), '#2b2a28');
+      // tutorial pause: a wrong tone doesn't move the fish, it just explains and waits for another try
+      if(tut && tut.frozen){ coach(L().tutWrong(toneName(tone), toneName(tgt.tone), L().shape[tgt.tone]) + coachWord(tgt)); return; }
+    }
+  }
+
+  if(tone===2){ if(b.lane>0) b.lane--; }
+  else if(tone===4){ if(b.lane<LANES-1) b.lane++; }
+  // With the right tone, the move holds until the fish has passed the obstacle: no timing needed
+  else if(tone===1){ b.dashT=1.2; b.dashObj = (tgt && tgt.type==='glass') ? tgt : null; }
+  else if(tone===3){ b.anim={amp: LANE_H*1.2, t:0, phase:'in', hold:(tgt && tgt.type==='rock')?tgt:null}; }
+}
+const IN_T=0.22, OUT_T=0.28, MIN_HOLD=0.45;
+function animOffset(a, dt){
+  a.t+=dt;
+  if(a.phase==='in'){ if(a.t>=IN_T){ a.phase='hold'; a.t=0; } else return a.amp*Math.sin(a.t/IN_T*Math.PI/2); }
+  if(a.phase==='hold'){
+    const passed = !a.hold || a.hold.passed || (a.hold.x-game.dist+a.hold.w < BX-BR-4);
+    if(passed && a.t>=MIN_HOLD){ a.phase='out'; a.t=0; } else return a.amp;
+  }
+  if(a.t>=OUT_T) return null;
+  return a.amp*Math.cos(a.t/OUT_T*Math.PI/2);
+}
+function floatText(text,color){ game.floats.push({text,color,x:BX+20,y:game.bird.y-30,t:0}); }
+function burst(x,y,color,n=14){
+  for(let i=0;i<n;i++){ const a=Math.random()*Math.PI*2, s=60+Math.random()*160;
+    game.particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,t:0,life:0.6+Math.random()*0.4,color}); }
+}
+
+function update(dt){
+  const g=game, b=g.bird;
+  g.t+=dt;
+  if(b.dashT>0) b.dashT-=dt;
+  if(b.dashObj){ if(b.dashObj.broken || b.dashObj.passed) b.dashObj=null; else b.dashT=Math.max(b.dashT,0.3); }
+  const tgtNow=currentTarget();
+  if(tgtNow!==g.targetRef){ g.targetRef=tgtNow; if(tgtNow) replanFrom(tgtNow); }
+  // The target card "lights up" once it is fully on screen: that is the moment to read it
+  if(tgtNow && tgtNow.litRem==null && tgtNow.x-g.dist <= W-tgtNow.w-10){
+    tgtNow.litRem = remOf(tgtNow);
+    if(tut) tutOnLit(tgtNow);
+  }
+  if(tut && g.tutEndAt && g.t>g.tutEndAt){ finishTutorial(false); return; }
+  const speed = (tut && tut.frozen) ? 0 : speedBase * (b.dashT>0 ? 1.9 : 1);
+  g.dist += speed*dt;
+  while(g.nextX < g.dist + W + 80) spawn();
+
+  // bird vertical motion
+  const targetY=laneY(b.lane);
+  const prevY=b.y;
+  let off=0;
+  if(b.anim){ const v=animOffset(b.anim,dt); if(v===null) b.anim=null; else off=v; }
+  b.base = (b.base ?? targetY) + (targetY-(b.base ?? targetY))*Math.min(1,dt*7);
+  b.y = Math.max(TOP+BR, Math.min(GROUND-BR, b.base+off));
+  b.vy = (b.y-prevY)/Math.max(dt,1e-3);
+
+  // collisions & scoring
+  if(g.inv>0) g.inv-=dt;
+  for(const o of g.obs){
+    const sx=o.x-g.dist;
+    for(const R of rectsOf(o,sx)){
+      if(hitCircle(BX,b.y,BR,R)){
+        if(o.type==='glass' && b.dashT>0){ o.broken=true; burst(sx+o.w/2,b.y,'#ff8fa3',24); floatText(L().smash,'#1c7ed6'); }
+        else if(g.inv<=0 && tut){            // tutorial: no hearts lost, just a tip
+          g.inv=1.2; o.hit=true; burst(BX,b.y,'#e5484d',10); coach(L().tutMiss);
+        }
+        else if(g.inv<=0){
+          g.hearts--; g.inv=1.6; g.shake=0.35; g.streak=0; o.hit=true;
+          burst(BX,b.y,'#e5484d',16);
+          if(g.hearts<=0){ gameOver(); return; }
+        }
+      }
+    }
+    if(!o.passed && sx+o.w < BX-BR){
+      o.passed=true;
+      if(!o.hit){ g.score++; g.streak++; g.best=Math.max(g.best,g.streak); }
+      if(tut && o.tutIdx===TUT_SEQ.length-1) g.tutEndAt=g.t+0.9;
+    }
+  }
+  g.obs = g.obs.filter(o=>o.x-g.dist+o.w>-40);
+  for(const c of g.clouds){
+    c.x-=speed*0.3*c.s*dt; c.y-=(18+30*c.s)*dt; c.x+=Math.sin(g.t*2+c.s*9)*10*dt;
+    if(c.x<-20 || c.y<-10){ c.x=Math.random()*(W+60); c.y=GROUND+Math.random()*20; }
+  }
+  for(const p of g.particles){ p.t+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=300*dt; }
+  g.particles=g.particles.filter(p=>p.t<p.life);
+  for(const f of g.floats){ f.t+=dt; f.y-=30*dt; }
+  g.floats=g.floats.filter(f=>f.t<1.4);
+  if(g.shake>0) g.shake-=dt;
+}
+
+/* ---------- Drawing ---------- */
+function rr(x,y,w,h,r){ ctx.beginPath(); ctx.roundRect(x,y,w,h,r); }
+function draw(){
+  const g=game, b=g.bird;
+  ctx.save();
+  if(g.shake>0 && state==='play') ctx.translate((Math.random()-0.5)*8,(Math.random()-0.5)*8);
+  // sea water: bright near the surface, deep blue below
+  const sea=ctx.createLinearGradient(0,0,0,GROUND);
+  sea.addColorStop(0,'#6fd0ec'); sea.addColorStop(0.55,'#2f9fcf'); sea.addColorStop(1,'#1b6f9e');
+  ctx.fillStyle=sea; ctx.fillRect(-10,-10,W+20,GROUND+10);
+  // sunlight rays from the surface, slowly swaying
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(let i=0;i<5;i++){
+    const rx = ((i*W/4.2 - g.dist*0.05) % (W+200) + W+200) % (W+200) - 100, sway=Math.sin(g.t*0.6+i)*30;
+    const rg=ctx.createLinearGradient(0,0,0,GROUND*0.9);
+    rg.addColorStop(0,'rgba(255,255,255,.16)'); rg.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=rg; ctx.beginPath();
+    ctx.moveTo(rx,0); ctx.lineTo(rx+50,0); ctx.lineTo(rx+130+sway,GROUND*0.9); ctx.lineTo(rx+40+sway,GROUND*0.9); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+  // surface ripple line
+  ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=2; ctx.beginPath();
+  for(let x=0;x<=W;x+=8){ const y=4+Math.sin(x/30+g.t*2)*2; x?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke();
+  // distant reef silhouettes (parallax)
+  const off=(g.dist*0.15)%300;
+  ctx.fillStyle='rgba(18,84,122,.55)';
+  ctx.beginPath(); ctx.moveTo(-10,GROUND);
+  for(let x=-off-10;x<W+300;x+=150){
+    ctx.quadraticCurveTo(x+20,GROUND-70,x+45,GROUND-55); ctx.quadraticCurveTo(x+70,GROUND-110,x+100,GROUND-60);
+    ctx.quadraticCurveTo(x+125,GROUND-40,x+150,GROUND);
+  }
+  ctx.lineTo(W+10,GROUND); ctx.fill();
+  // bubbles
+  ctx.strokeStyle='rgba(255,255,255,.75)'; ctx.lineWidth=1.5;
+  for(const c of g.clouds){
+    const r=3+5*c.s;
+    ctx.fillStyle='rgba(255,255,255,.12)'; ctx.beginPath(); ctx.arc(c.x,c.y,r,0,7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(c.x-r*0.35,c.y-r*0.35,r*0.25,0,7); ctx.fill();
+  }
+  // lane guides
+  ctx.strokeStyle='rgba(255,255,255,.25)'; ctx.setLineDash([6,10]); ctx.lineWidth=1;
+  for(let l=1;l<LANES;l++){ ctx.beginPath(); ctx.moveTo(0,laneTop(l)); ctx.lineTo(W,laneTop(l)); ctx.stroke(); }
+  ctx.setLineDash([]);
+
+  // obstacles
+  const tgt=currentTarget();
+  for(const o of g.obs){
+    const sx=o.x-g.dist, col=TONES[o.tone].color;
+    if(o.type==='gate'){
+      // reef rock pillars with coral growing on them; tone-coloured bands mark the opening
+      for(const R of rectsOf(o,sx)){
+        drawReefRock(R, o.x);
+        // coral tufts sprouting from the pillar
+        const seed=o.x*0.37;
+        for(let y=R.y+30;y<R.y+R.h-20;y+=55){
+          const side = Math.floor(y/55+seed)%2 ? R.x+R.w-6 : R.x+6;
+          drawCoralTuft(side, y, 12, ['#ff7a8a','#ffa94d','#cc5de8'][Math.floor(y/55+seed)%3]);
+        }
+      }
+      ctx.fillStyle=col;
+      rr(sx-5,laneTop(o.gap)-20,o.w+10,14,7); ctx.fill();
+      rr(sx-5,laneBot(o.gap)+6,o.w+10,14,7); ctx.fill();
+    } else if(o.type==='glass'){
+      // brittle coral wall: a Tone 1 dash smashes through it
+      if(!o.broken){
+        ctx.fillStyle='rgba(255,140,160,.55)'; rr(sx,0,o.w,GROUND,8); ctx.fill();
+        ctx.strokeStyle='#ff6b81'; ctx.lineWidth=3; ctx.lineCap='round';
+        ctx.beginPath(); ctx.moveTo(sx+o.w/2,0); ctx.lineTo(sx+o.w/2,GROUND); ctx.stroke();
+        ctx.lineWidth=2.5; ctx.beginPath();
+        for(let y=24,i=0;y<GROUND;y+=34,i++){
+          const d=i%2?1:-1, mx=sx+o.w/2;
+          ctx.moveTo(mx,y); ctx.quadraticCurveTo(mx+d*8,y-4,mx+d*(o.w/2+4),y-14);
+        }
+        ctx.stroke();
+        ctx.fillStyle='rgba(255,240,245,.9)';
+        for(let y=14;y<GROUND;y+=22){ ctx.beginPath(); ctx.arc(sx+4+((y*7)%(o.w-8)),y,1.8,0,7); ctx.fill(); }
+        ctx.lineCap='butt';
+      }
+    } else if(o.type==='rock'){
+      // floating reef rock: blocks this lane + the one above, open below → Tone 3 dips under it
+      const R=rectsOf(o,sx)[0];
+      drawReefRock(R, o.x, 14);
+      drawCoralTuft(R.x+R.w/2, R.y+4, 12, '#ff7a8a');
+      ctx.fillStyle=col; rr(R.x-3,R.y+R.h-8,R.w+6,8,4); ctx.fill();   // green edge underneath: go below
+    }
+    // word card: character + pinyin
+    if(!o.passed){
+      const cx=sx+o.w/2, cy= o.type==='gate' ? laneY(o.gap) : laneY(o.type==='glass' ? o.fromLane : o.lane);
+      const isT = o===tgt, lit = isT && o.litRem!=null && !o.answered;
+      ctx.globalAlpha = isT?1:0.6;
+      // the card to read now pulses with a glow; later cards stay dim
+      if(lit){ ctx.shadowColor=col; ctx.shadowBlur=6+14*(0.5+0.5*Math.sin(g.t*8)); }
+      ctx.fillStyle='#fffdf8'; rr(cx-30,cy-26,60,52,10); ctx.fill();
+      ctx.lineWidth=lit?4:(isT?3:1.5); ctx.strokeStyle=o.answered?'#2f9e44':col; ctx.stroke();
+      ctx.shadowBlur=0;
+      ctx.fillStyle='#2b2a28'; ctx.font='bold 24px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(o.word[0],cx,cy-6);
+      ctx.fillStyle=col; ctx.font='bold 13px '+CF; ctx.fillText(o.word[1],cx,cy+15);
+      ctx.globalAlpha=1;
+    }
+  }
+
+  // sandy sea floor with swaying seaweed and small coral
+  ctx.fillStyle='#e8d6a0'; ctx.fillRect(-10,GROUND,W+20,H-GROUND+10);
+  ctx.fillStyle='#d6c084';
+  for(let x=-(g.dist%40);x<W;x+=40){ ctx.beginPath(); ctx.ellipse(x+10,GROUND+18,10,2.5,0,0,7); ctx.fill(); }
+  const fo=g.dist%180;
+  for(let x=-fo;x<W+60;x+=180){
+    const k=Math.round((x+fo)/180)+Math.floor(g.dist/180);   // stable per-plant id
+    ctx.strokeStyle='#2f9e44'; ctx.lineWidth=4; ctx.lineCap='round';
+    for(let j=0;j<3;j++){
+      const bx=x+j*7, hgt=30+((k*7+j*13)%4+4)*6, sw=Math.sin(g.t*2+j+k)*8;
+      ctx.beginPath(); ctx.moveTo(bx,GROUND+2);
+      ctx.quadraticCurveTo(bx+sw,GROUND-hgt*0.5,bx+sw*1.4,GROUND-hgt); ctx.stroke();
+    }
+    ctx.lineCap='butt';
+    drawCoralTuft(x+95, GROUND+2, 14, ['#ff7a8a','#ffa94d','#cc5de8'][((k%3)+3)%3]);
+  }
+
+  // dash trail: a stream of bubbles
+  if(b.dashT>0){
+    ctx.strokeStyle='rgba(255,255,255,.75)'; ctx.lineWidth=1.5;
+    for(let i=0;i<6;i++){ const bx=BX-26-i*11, by=b.y+Math.sin(g.t*20+i*1.7)*6; ctx.beginPath(); ctx.arc(bx,by,2+i*0.6,0,7); ctx.stroke(); }
+  }
+  // fish
+  if(!(g.inv>0 && Math.floor(g.t*12)%2===0)) drawFish(BX,b.y,Math.max(-0.5,Math.min(0.6,b.vy/500)), b.dashT>0);
+
+  for(const p of g.particles){ ctx.globalAlpha=1-p.t/p.life; ctx.fillStyle=p.color; ctx.fillRect(p.x-2,p.y-2,4,4); }
+  ctx.globalAlpha=1;
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  for(const f of g.floats){ ctx.globalAlpha=Math.min(1,2-f.t*1.4); ctx.fillStyle=f.color; ctx.font='bold 18px '+CF; ctx.fillText(f.text,f.x,f.y); }
+  ctx.globalAlpha=1;
+  ctx.restore();
+
+  // HUD: score & hearts
+  ctx.font='bold 18px '+CF; ctx.textBaseline='middle';
+  const scoreTxt=L().score+' '+g.score;
+  const sw=ctx.measureText(scoreTxt).width;
+  ctx.fillStyle='rgba(255,253,248,.9)'; rr(12,12,sw+110,40,10); ctx.fill();
+  ctx.fillStyle='#2b2a28'; ctx.fillText(scoreTxt, 24, 32);
+  ctx.fillStyle='#e5484d'; ctx.font='16px sans-serif';
+  ctx.fillText('♥'.repeat(Math.max(0,g.hearts)), 36+sw, 32);
+  // HUD: what to say (character, pinyin, meaning, tone)
+  if(tgt && state==='play') drawTargetHUD(tgt);
+  ctx.textBaseline='alphabetic';
+}
+function drawTargetHUD(tgt){
+  const T=TONES[tgt.tone], wd=tgt.word, k=NARROW?1.15:1, f=n=>Math.round(n*k)+'px ';
+  const parts=[
+    {text:L().say+' ',          font:f(15)+CF,      color:'#2b2a28'},
+    {text:wd[0]+' ',            font:'bold '+f(22)+CF, color:'#2b2a28'},
+    {text:wd[1]+'  ',           font:'bold '+f(16)+CF, color:T.color},
+    {text:meaning(wd)+'   ',    font:f(14)+CF,      color:'#7a766e'},
+    {text:toneName(tgt.tone)+' '+T.icon, font:'bold '+f(15)+CF, color:T.color},
+  ];
+  let total=0; for(const p of parts){ ctx.font=p.font; p.w=ctx.measureText(p.text).width; total+=p.w; }
+  const bh=Math.round(40*k);
+  // wide: top-right corner; narrow: centred on the ground strip so it never covers the score
+  // on wide screens leave room for the pause / restart buttons in the top-right corner
+  const ctlW = (gameCtl.offsetWidth || 92) / (cv.clientWidth / W) + 10;
+  const x0 = NARROW ? (W-total-24)/2 : W-12-total-24-ctlW;
+  const y0 = NARROW ? GROUND + (H-GROUND-bh)/2 + 3 : 12;
+  const bw=total+24, showBar = tgt.litRem!=null && !tgt.answered;
+  const boxH = bh + (showBar ? 10 : 0);
+  const yBox = NARROW ? y0 - (showBar?5:0) : y0;
+  ctx.fillStyle='rgba(255,253,248,.94)'; rr(x0,yBox,bw,boxH,10); ctx.fill();
+  let x=x0+12;
+  for(const p of parts){ ctx.font=p.font; ctx.fillStyle=p.color; ctx.fillText(p.text,x,yBox+bh/2); x+=p.w; }
+  // time left until the fish reaches the card: green → orange → red; the red tick marks "start reading by here"
+  if(showBar){
+    const rem=Math.max(0,remOf(tgt)), frac=Math.min(1, rem/Math.max(0.1,tgt.litRem));
+    const bx=x0+10, by=yBox+bh+1, bwid=bw-20;
+    ctx.fillStyle='#ece6da'; rr(bx,by,bwid,5,3); ctx.fill();
+    ctx.fillStyle = rem>2 ? '#2f9e44' : rem>LATE_S ? '#f08c00' : '#e5484d';
+    if(frac>0){ rr(bx,by,Math.max(5,bwid*frac),5,3); ctx.fill(); }
+    const lx = bx + bwid*Math.min(1, LATE_S/Math.max(0.1,tgt.litRem));
+    ctx.fillStyle='#e5484d'; ctx.fillRect(lx-1,by-2,2,9);
+  }
+}
+// A little orange fish facing right; its tail wags, faster while dashing
+function drawFish(x,y,tilt,dash){
+  ctx.save(); ctx.translate(x,y); ctx.rotate(tilt);
+  const wag=Math.sin(game.t*(dash?28:12))*5, body=dash?'#ff6b3d':'#ff922b';
+  ctx.strokeStyle='#2b2a28'; ctx.lineWidth=2; ctx.lineJoin='round';
+  // tail
+  ctx.fillStyle=body; ctx.beginPath();
+  ctx.moveTo(-BR,0); ctx.lineTo(-BR-12,-10+wag); ctx.quadraticCurveTo(-BR-7,wag*0.5,-BR-12,10+wag); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // top fin
+  ctx.beginPath(); ctx.moveTo(-6,-BR+2); ctx.quadraticCurveTo(0,-BR-9,8,-BR+3); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // body
+  ctx.beginPath(); ctx.ellipse(0,0,BR+5,BR,0,0,7); ctx.fill();
+  // white stripes, clipped to the body
+  ctx.save(); ctx.clip();
+  ctx.fillStyle='#fff'; ctx.fillRect(-4,-BR,6,BR*2); ctx.fillRect(-15,-BR,4,BR*2);
+  ctx.fillStyle='rgba(255,255,255,.35)'; ctx.beginPath(); ctx.ellipse(2,-6,10,3,0,0,7); ctx.fill();
+  ctx.restore();
+  ctx.beginPath(); ctx.ellipse(0,0,BR+5,BR,0,0,7); ctx.stroke();
+  // side fin
+  ctx.fillStyle='#ffc078'; ctx.beginPath(); ctx.ellipse(-2,6,6,3.5,0.5+wag*0.05,0,7); ctx.fill(); ctx.stroke();
+  // eye & mouth
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(10,-4,4.5,0,7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#2b2a28'; ctx.beginPath(); ctx.arc(11.5,-4,2,0,7); ctx.fill();
+  ctx.beginPath(); ctx.arc(17,4,2.5,-0.3,1.6); ctx.stroke();
+  ctx.restore();
+}
+// Rough, rounded reef rock with spots and a few barnacles. `seed` keeps the pattern stable as it scrolls.
+function drawReefRock(R, seed, rad=10){
+  if(R.h<=0) return;
+  const gr=ctx.createLinearGradient(R.x,0,R.x+R.w,0);
+  gr.addColorStop(0,'#6b6f7d'); gr.addColorStop(1,'#4b5060');
+  ctx.fillStyle=gr; rr(R.x,R.y,R.w,R.h,rad); ctx.fill();
+  ctx.strokeStyle='rgba(20,30,45,.5)'; ctx.lineWidth=2; ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(R.x+6,R.y+8,5,Math.max(0,R.h-16));
+  for(let y=R.y+14, i=0; y<R.y+R.h-8; y+=26, i++){
+    const px=R.x+8+((i*17+seed)%Math.max(1,R.w-16));
+    ctx.fillStyle='rgba(30,40,55,.35)'; ctx.beginPath(); ctx.ellipse(px,y,5,3.5,0,0,7); ctx.fill();
+    if(i%3===1){ ctx.fillStyle='#e9ecef'; ctx.beginPath(); ctx.arc(R.x+R.w-8,y+6,3,0,7); ctx.fill(); }
+  }
+}
+// Small branching coral growing upward from (x,y)
+function drawCoralTuft(x,y,s,color){
+  ctx.strokeStyle=color; ctx.lineCap='round'; ctx.lineWidth=s*0.28;
+  ctx.beginPath();
+  ctx.moveTo(x,y); ctx.lineTo(x,y-s);
+  ctx.moveTo(x,y-s*0.45); ctx.quadraticCurveTo(x-s*0.6,y-s*0.6,x-s*0.65,y-s*1.05);
+  ctx.moveTo(x,y-s*0.6);  ctx.quadraticCurveTo(x+s*0.6,y-s*0.7,x+s*0.6,y-s*1.15);
+  ctx.stroke();
+  ctx.fillStyle=color;
+  for(const [dx,dy] of [[0,-1],[-0.65,-1.05],[0.6,-1.15]]){ ctx.beginPath(); ctx.arc(x+dx*s,y+dy*s,s*0.2,0,7); ctx.fill(); }
+  ctx.lineCap='butt';
+}
+
+/* ---------- Menu / pause / game-over dialogs ---------- */
+const overlay=document.getElementById('overlay'), dlg=document.getElementById('dlg');
+function showMenu(){
+  endTutorialMode();
+  state='menu'; overlay.classList.remove('hidden');
+  const moves=[1,2,3,4].map(t=>`<b style="color:${TONES[t].color}">${toneName(t)} ${TONES[t].icon}</b><span>${L().moveShort[t]}</span>`).join('');
+  const first = !tutDone();
+  dlg.innerHTML=`<h2>${L().title}</h2>
+    <p>${L().menuP1}</p>
+    <div class="moves">${moves}</div>
+    <p>${L().menuP2}</p>
+    <p>${L().menuTiming}</p>
+    <p>${L().menuP3}</p>
+    ${first ? `<p><b>${L().tutorialRec}</b></p>` : ''}
+    <div class="row">
+      ${first ? `<button class="share" id="tutB">▶ ${L().tutorial}</button>` : ''}
+      <select id="spd"><option value="80">${L().slow}</option><option value="110">${L().mid}</option><option value="145">${L().fast}</option></select>
+      <button id="go" class="${first?'ghost':''}">${L().start}</button>
+    </div>
+    ${first ? '' : `<button class="link" id="tutB">${L().tutorialAgain}</button>`}`;
+  document.getElementById('spd').value=speedBase;
+  document.getElementById('go').onclick=start;
+  document.getElementById('tutB').onclick=startTutorial;
+}
+function start(){
+  endTutorialMode();
+  const s=document.getElementById('spd'); if(s) speedBase=+s.value;
+  newGame(); state='play'; overlay.classList.add('hidden');
+}
+
+/* ---------- Tutorial: teaches WHEN to read the next card ---------- */
+const TUT_SEQ=[2,4,1,3,2], TUT_FREEZE=2, TUT_SPEED=80;   // first 2 cards pause the game until read
+let tut=null, speedBeforeTut=110;
+const coachEl=document.getElementById('coach'), coachText=document.getElementById('coachText'), coachSkip=document.getElementById('coachSkip');
+function tutDone(){ try{ return localStorage.getItem('toneFishTutDone')==='1'; }catch(e){ return false; } }
+function setTutDone(){ try{ localStorage.setItem('toneFishTutDone','1'); }catch(e){} }
+function coach(html){
+  if(!html){ coachEl.classList.add('hidden'); return; }
+  coachText.innerHTML=html; coachSkip.textContent=L().skipTut; coachEl.classList.remove('hidden');
+}
+const coachWord = o => `<br><span class="say"><span class="zh" lang="zh-CN">${o.word[0]}</span> <span style="color:${TONES[o.tone].color}">${o.word[1]}</span></span>
+  <small>(${meaning(o.word)})</small> · <b style="color:${TONES[o.tone].color}">${toneName(o.tone)} ${TONES[o.tone].icon}</b> <small>${L().shape[o.tone]}</small>`;
+function startTutorial(){
+  const s=document.getElementById('spd'); speedBeforeTut = s ? +s.value : speedBase;
+  tut={spawned:0, frozen:false};
+  speedBase=TUT_SPEED; newGame(); state='play'; overlay.classList.add('hidden');
+  coach(L().tutIntro);
+}
+function tutOnLit(o){
+  if(o.answered) return;
+  if(o.tutIdx < TUT_FREEZE){
+    tut.frozen=true;
+    coach((o.tutIdx===0 ? L().tutNow1 : L().tutNow2) + coachWord(o) + '<br>' + L().tutWait(o.tone));
+  } else {
+    coach((o.tutIdx===TUT_FREEZE ? L().tutNoFreeze : L().tutKeep) + coachWord(o));
+  }
+}
+function endTutorialMode(){
+  if(tut){ tut=null; speedBase=speedBeforeTut; }
+  coach('');
+}
+function finishTutorial(){
+  endTutorialMode(); setTutDone();
+  state='tutdone'; renderTutDone();
+}
+function renderTutDone(){
+  overlay.classList.remove('hidden');
+  dlg.innerHTML=`<h2>${L().tutDoneTitle}</h2>
+    <ul class="tips">${L().tutDoneTips.map(t=>`<li>${t}</li>`).join('')}</ul>
+    <div class="row main"><button id="go">▶ ${L().start}</button><button class="ghost" id="tutB">${L().tutorialAgain}</button></div>`;
+  document.getElementById('go').onclick=start;
+  document.getElementById('tutB').onclick=startTutorial;
+}
+coachSkip.onclick=()=>finishTutorial();
+// Wide screens: keep the bubble right of the fish and in the half of the screen away from the glowing card
+function positionCoach(){
+  if(NARROW || coachEl.classList.contains('hidden')) return;
+  const s = cv.clientWidth / W, t = game.targetRef;
+  const cardY = t ? (t.type==='gate' ? laneY(t.gap) : laneY(t.type==='glass' ? t.fromLane : t.lane)) : H*0.7;
+  coachEl.style.left = Math.round((BX+BR+18)*s)+'px';
+  if(cardY > H/2){ coachEl.style.top = Math.round(58*s)+'px'; coachEl.style.bottom = 'auto'; }
+  else { coachEl.style.bottom = Math.round((H-GROUND+8)*s)+'px'; coachEl.style.top = 'auto'; }
+}
+function gameOver(){
+  state='over'; game.shake=0; game.inv=0; renderOver();
+}
+function renderOver(){
+  overlay.classList.remove('hidden');
+  const rows=[1,2,3,4].map(t=>{ const [said,ok]=game.stats[t]; return `<tr><td style="color:${TONES[t].color};font-weight:700">${toneName(t)}</td><td>${said}</td><td>${ok}</td></tr>`; }).join('');
+  dlg.innerHTML=`<h2>${L().overTitle}</h2>
+    <div class="bigScore"><small>${L().scoreLabel}</small>${game.score}</div>
+    <p>${L().bestStreak(game.best)}</p>
+    <table class="stats"><tr><th>${L().thTone}</th><th>${L().thSaid}</th><th>${L().thOk}</th></tr>${rows}</table>
+    <p>${L().overTip}</p>
+    <div class="row main"><button id="again">↻ ${L().again}</button><button class="share" id="shareB">↗ ${L().share}</button></div>
+    <p id="shareMsg"></p>
+    <button class="link" id="menuB">${L().menu}</button>`;
+  document.getElementById('again').onclick=()=>{ newGame(); state='play'; overlay.classList.add('hidden'); };
+  document.getElementById('shareB').onclick=shareScore;
+  document.getElementById('menuB').onclick=showMenu;
+  // build the image now so the share sheet can open immediately on tap (Safari requires that)
+  scoreImg=null; makeScoreImage().then(b=>{ scoreImg=b; });
+}
+let scoreImg=null;
+
+/* ---------- Sharing the score ---------- */
+function shareUrl(){ return /^https?:$/.test(location.protocol) ? location.href.split('#')[0] : ''; }
+// A small score card image for chat apps (only used where the share sheet accepts images)
+function makeScoreImage(){
+  const c=document.createElement('canvas'); c.width=720; c.height=420;
+  const x=c.getContext('2d');
+  const g=x.createLinearGradient(0,0,0,420); g.addColorStop(0,'#6fd0ec'); g.addColorStop(1,'#1b6f9e');
+  x.fillStyle=g; x.fillRect(0,0,720,420);
+  x.fillStyle='#e8d6a0'; x.beginPath(); x.moveTo(0,420);
+  for(let px0=0; px0<720; px0+=240) x.quadraticCurveTo(px0+120,300,px0+240,420);
+  x.fill();
+  x.fillStyle='rgba(255,253,248,.95)'; x.beginPath(); x.roundRect(40,36,640,348,22); x.fill();
+  x.fillStyle='#2b2a28'; x.font='bold 34px '+CF; x.textBaseline='alphabetic'; x.fillText('Tone Fish 🐟',72,92);
+  x.fillStyle='#7a766e'; x.font='18px '+CF; x.fillText(L().cardTagline,72,122);
+  x.fillStyle='#7a766e'; x.font='bold 16px '+CF; x.fillText(L().scoreLabel,72,172);
+  x.fillStyle='#2b2a28'; x.font='bold 96px '+CF; x.fillText(String(game.score),68,262);
+  x.fillStyle='#7a766e'; x.font='18px '+CF; x.fillText(L().bestStreak(game.best),72,300);
+  // per-tone correct / said
+  x.fillStyle='#7a766e'; x.font='bold 16px '+CF; x.fillText(L().cardAcc,380,172);
+  [1,2,3,4].forEach((t,i)=>{
+    const [said,ok]=game.stats[t], y=196+i*42, frac = said? ok/said : 0;
+    x.fillStyle=TONES[t].color; x.font='bold 18px '+CF; x.fillText(toneName(t),380,y+16);
+    x.fillStyle='#ece6da'; x.beginPath(); x.roundRect(450,y+2,150,16,8); x.fill();
+    if(frac>0){ x.fillStyle=TONES[t].color; x.beginPath(); x.roundRect(450,y+2,Math.max(16,150*frac),16,8); x.fill(); }
+    x.fillStyle='#2b2a28'; x.font='16px '+CF; x.fillText(`${ok}/${said}`,612,y+16);
+  });
+  const url=shareUrl();
+  if(url){ x.fillStyle='#7a766e'; x.font='14px '+CF; x.fillText(url.length>70? url.slice(0,67)+'…' : url,72,362); }
+  return new Promise(res=>c.toBlob(b=>res(b),'image/png'));
+}
+async function shareScore(){
+  const msg=document.getElementById('shareMsg');
+  const text=L().shareText(game.score, game.best), url=shareUrl();
+  const full = url ? `${text} ${url}` : text;
+  try{
+    if(navigator.share){
+      const file = scoreImg && new File([scoreImg],'tone-fish-score.png',{type:'image/png'});
+      if(file && navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({title:'Tone Fish', text:full, files:[file]}); return;
+      }
+      await navigator.share(url ? {title:'Tone Fish', text, url} : {title:'Tone Fish', text}); return;
+    }
+  }catch(e){ if(e && e.name==='AbortError') return; }   // user closed the share sheet
+  // No share sheet (most desktop browsers): copy the text instead
+  try{ await navigator.clipboard.writeText(full); msg.textContent=L().copied; return; }catch(e){}
+  msg.textContent=L().copyManual;
+  if(!document.getElementById('shareText')){
+    msg.insertAdjacentHTML('afterend', `<textarea id="shareText" rows="3" readonly></textarea>`);
+  }
+  const ta=document.getElementById('shareText'); ta.value=full; ta.focus(); ta.select();
+}
+function renderPause(){
+  overlay.classList.remove('hidden');
+  dlg.innerHTML=`<h2>${L().pauseTitle}</h2><p>${L().pauseP}</p>
+    <div class="row main"><button id="res">▶ ${L().resume}</button><button class="ghost" id="rst">↻ ${L().restart}</button></div>
+    <button class="link" id="menuB">${L().menu}</button>`;
+  document.getElementById('res').onclick=togglePause;
+  document.getElementById('rst').onclick=restartGame;
+  document.getElementById('menuB').onclick=showMenu;
+}
+function togglePause(){
+  if(state==='play'){ state='pause'; renderPause(); }
+  else if(state==='pause'){ state='play'; overlay.classList.add('hidden'); }
+}
+// Restart the current run from the beginning (a tutorial restarts the tutorial)
+function restartGame(){
+  if(tut){ const keep=speedBeforeTut; endTutorialMode(); speedBeforeTut=keep; startTutorial(); speedBeforeTut=keep; return; }
+  newGame(); state='play'; overlay.classList.add('hidden');
+}
+const gameCtl=document.getElementById('gameCtl'), pauseBtn=document.getElementById('pauseBtn'), restartBtn=document.getElementById('restartBtn');
+// blur after click so a later Space press doesn't "click" the button again on top of our own Space handler
+pauseBtn.onclick=()=>{ pauseBtn.blur(); togglePause(); };
+restartBtn.onclick=()=>{ restartBtn.blur(); restartGame(); };
+function renderCtlLabels(){
+  pauseBtn.title=L().pauseBtn;     pauseBtn.setAttribute('aria-label', L().pauseBtn);
+  restartBtn.title=L().restartBtn; restartBtn.setAttribute('aria-label', L().restartBtn);
+}
+addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  const map={'1':1,'2':2,'3':3,'4':4};
+  if(e.key in map){ applyTone(map[e.key],'key'); }
+  else if(e.code==='Space'){ e.preventDefault(); togglePause(); }
+  else if((e.key==='r'||e.key==='R') && (state==='play'||state==='pause')){ restartGame(); }
+  else if(e.key==='Enter' && state==='menu'){ start(); }
+});
+
+/* ---------- Language switching ---------- */
+const langSel=document.getElementById('lang');
+function applyLang(){
+  document.documentElement.lang=lang;
+  document.title=L().title;
+  langSel.value=lang;
+  document.querySelectorAll('[data-i18n]').forEach(el=>{ el.textContent=L()[el.dataset.i18n]; });
+  renderLegend(); renderKeys(); renderMic(); renderDet(); renderCtlLabels();
+  if(state==='menu') showMenu();
+  else if(state==='pause') renderPause();
+  else if(state==='over') renderOver();
+  else if(state==='tutdone') renderTutDone();
+  if(tut && game.targetRef && game.targetRef.litRem!=null && !game.targetRef.answered) tutOnLit(game.targetRef);
+}
+langSel.onchange=()=>{
+  lang=langSel.value;
+  try{ localStorage.setItem('toneFishLang', lang); }catch(e){}
+  applyLang();
+};
+
+/* ---------- Main loop ---------- */
+const levelBar=document.getElementById('levelBar'), gateMark=document.getElementById('gateMark');
+let lastT=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
+  if(micOn) processAudio(now);
+  // level bar in decibels (-70 dB … -10 dB) so quiet voices still show; black line = current voice threshold
+  const dbPct = v => Math.max(0, Math.min(100, (20*Math.log10(Math.max(v,1e-6))+70)/60*100));
+  levelBar.style.width = dbPct(level)+'%';
+  levelBar.style.background = level>gate ? '#2f9e44' : '#b9b2a3';
+  gateMark.style.left = dbPct(gate)+'%';
+  if(state==='play') update(dt);
+  draw(); drawPitch(now); positionCoach();
+  gameCtl.classList.toggle('hidden', state!=='play');
+  requestAnimationFrame(loop);
+}
+let resizeTimer=null;
+function onResize(){ clearTimeout(resizeTimer); resizeTimer=setTimeout(()=>{ layout(); sizePitch(); }, 80); }
+addEventListener('resize', onResize);
+addEventListener('orientationchange', onResize);
+if(window.ResizeObserver) new ResizeObserver(onResize).observe(stageWrap);
+layout(); sizePitch(); applyLang();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
