@@ -143,6 +143,8 @@
       <button id="micBtn"></button>
       <div id="level"><div id="levelBar"></div><div id="gateMark"></div></div>
       <div id="micStatus"></div>
+      <button class="ghost" id="recBtn" style="width:100%;margin-top:8px;font-size:14px" data-i18n="recBtn"></button>
+      <p class="tip" id="recMsg" data-i18n="recTip"></p>
     </div>
 
     <div class="card" id="pitchCard">
@@ -200,6 +202,10 @@ const I18N = {
     tip:'소리 크기가 아니라 음높이의 모양으로 판별해요. 1성은 높고 평평하게, 2성은 올라가게, 3성은 내려갔다 올라오게, 4성은 높은 데서 뚝 떨어지게 말하세요. 주변 소음에 맞춰 기준이 자동으로 조정돼요. 음량 막대의 검은 선을 넘으면 목소리로 인식해요. “게임용 발음만 인식”을 켜 두면 앞뒤로 잠깐 멈춘 한 음절만, 그리고 반짝이는 카드가 있을 때만 반응해서 옆 사람과의 대화나 잡음은 무시해요.',
     toneName:n=>`${n}성`,
     sIso:'게임용 발음만 인식 (대화·잡음 무시)',
+    recBtn:'🎙 최근 30초 녹음 저장 (.wav)',
+    recTip:'인식이 이상할 때 바로 누르면, 방금 말한 소리가 파일로 저장돼요. 이 컴퓨터에만 저장되고, 누를 때만 저장돼요.',
+    recEmpty:'저장할 소리가 아직 없어요. 마이크를 켜고 말한 뒤 눌러 주세요.',
+    recSaved:s=>`최근 ${s}초 녹음을 저장했어요 (다운로드 폴더).`,
     logBtn:'📋 인식 기록 복사',
     logTip:'바르게 말했는데 틀리게 인식되면, 이 버튼으로 기록을 복사해 보내 주세요. 음높이 숫자만 담기고 녹음은 저장되지 않아요.',
     logEmpty:'아직 기록이 없어요. 마이크로 몇 판 플레이한 뒤 눌러 주세요.',
@@ -267,6 +273,10 @@ const I18N = {
     tip:'Detection uses the shape of your pitch, not loudness. Tone 1: high and level. Tone 2: rising. Tone 3: dips low, then rises. Tone 4: falls sharply from high. The threshold adapts to background noise automatically; anything past the black line on the level bar counts as voice. With "Only react to game reading" on, the game only responds to a single syllable with a short pause before and after, and only while a card is glowing, so chatting with people nearby and background noise are ignored.',
     toneName:n=>`Tone ${n}`,
     sIso:'Only react to game reading (ignore talking & noise)',
+    recBtn:'🎙 Save last 30 s of audio (.wav)',
+    recTip:'When recognition seems off, press this right away to save what you just said as a file. It is saved only on this computer, and only when you press.',
+    recEmpty:'Nothing to save yet. Turn on the microphone and speak first.',
+    recSaved:s=>`Saved the last ${s} s of audio (Downloads folder).`,
     logBtn:'📋 Copy recognition log',
     logTip:'If a correctly spoken tone is recognized wrong, copy the log with this button and send it in. It holds pitch numbers only; no audio is recorded.',
     logEmpty:'No log yet. Play a few rounds with the microphone first.',
@@ -369,6 +379,7 @@ bindSlider('min','minMs',v=>v+'');
 bindSlider('end','endMs',v=>v+'');
 document.getElementById('s_iso').onchange=e=>{ cfg.iso=e.target.checked; pendingSyl=null; };
 document.getElementById('logBtn').onclick=()=>copyRecLog();
+document.getElementById('recBtn').onclick=()=>saveRecording();
 
 /* ============================================================
    Side panel: legend & buttons
@@ -396,7 +407,7 @@ function renderKeys(){
 /* ============================================================
    Pitch detection (YIN)
    ============================================================ */
-let audioCtx=null, analyser=null, abuf=null, micOn=false, level=0, micErrMsg=null;
+let audioCtx=null, micOn=false, level=0, micErrMsg=null;
 const yinD = new Float32Array(1200);
 function yin(buf, sr){
   const minF=70, maxF=550;
@@ -447,9 +458,8 @@ micBtn.onclick = async ()=>{
     // Keep only the voice-pitch band: cut rumble below 70 Hz and hiss above 1.5 kHz
     const hp = audioCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=70;
     const lp = audioCtx.createBiquadFilter(); lp.type='lowpass';  lp.frequency.value=1500;
-    analyser = audioCtx.createAnalyser(); analyser.fftSize=2048;
-    src.connect(hp); hp.connect(lp); lp.connect(analyser);
-    abuf = new Float32Array(analyser.fftSize);
+    src.connect(hp); hp.connect(lp);
+    startAudioAnalysis(lp);
     micOn=true; micErrMsg=null;
   }catch(e){
     micErrMsg = e.message || String(e);
@@ -461,9 +471,57 @@ micBtn.onclick = async ()=>{
 const seg={active:false, pts:[], start:0, last:0};
 const recent=[];          // pitch points from the last few seconds (live plot)
 let lastContour=null;     // contour of the last syllable
-function processAudio(now){
-  analyser.getFloatTimeDomainData(abuf);
-  processFrame(abuf, audioCtx.sampleRate, now);
+/* ---------- Audio analysis, driven by the audio itself ----------
+   The pitch used to be read once per screen frame. When the browser slows its screen updates (window not
+   focused, covered, shown in a side panel, battery saver) that drops to a few reads a second, the pitch
+   track turns into scattered dots and short, fast tones (2 and 4) can't be recognised. Now every 16 ms of
+   microphone audio is analysed as it arrives, whatever the screen is doing. */
+const WIN_N=2048;                         // analysis window (samples)
+const REC_SEC=30;                         // keep the last 30 s of microphone audio for "save recording"
+let recBuf=null, recPos=0, recFilled=0;
+function startAudioAnalysis(node){
+  const sr=audioCtx.sampleRate, hop=Math.round(sr*0.016);
+  const ring=new Float32Array(WIN_N), win=new Float32Array(WIN_N);
+  let rpos=0, have=0, sinceHop=0;
+  recBuf=new Float32Array(Math.round(sr*REC_SEC)); recPos=0; recFilled=0;
+  const proc=audioCtx.createScriptProcessor(1024,1,1);
+  const mute=audioCtx.createGain(); mute.gain.value=0;            // must reach the output to keep running; silent
+  node.connect(proc); proc.connect(mute); mute.connect(audioCtx.destination);
+  proc.onaudioprocess=e=>{
+    const x=e.inputBuffer.getChannelData(0), tEnd=performance.now(), n=x.length;
+    // recording ring buffer
+    for(let i=0;i<n;i++){ recBuf[recPos]=x[i]; recPos=(recPos+1)%recBuf.length; }
+    recFilled=Math.min(recBuf.length, recFilled+n);
+    // analysis: one frame every 16 ms of audio, each with the time its last sample arrived
+    for(let i=0;i<n;i++){
+      ring[rpos]=x[i]; rpos=(rpos+1)%WIN_N; if(have<WIN_N) have++;
+      if(++sinceHop>=hop && have===WIN_N){
+        sinceHop=0;
+        for(let k=0;k<WIN_N;k++) win[k]=ring[(rpos+k)%WIN_N];
+        processFrame(win, sr, tEnd-(n-1-i)/sr*1000);
+      }
+    }
+  };
+  window.__audioProc=proc;                // keep a reference so it is never garbage-collected
+}
+// Save the last 30 s of microphone audio as a .wav file (stays on this computer; only saved on click)
+function saveRecording(){
+  const msg=document.getElementById('recMsg');
+  if(!recBuf || recFilled < audioCtx.sampleRate*0.5){ msg.textContent=L().recEmpty; return; }
+  const sr=audioCtx.sampleRate, n=recFilled, pcm=new Int16Array(n);
+  const start=(recPos-n+recBuf.length)%recBuf.length;
+  let peak=1e-6; for(let i=0;i<n;i++) peak=Math.max(peak, Math.abs(recBuf[(start+i)%recBuf.length]));
+  const g=Math.min(30, 0.9/peak);         // normalise so quiet recordings are still clear to listen to
+  for(let i=0;i<n;i++) pcm[i]=Math.max(-32768, Math.min(32767, Math.round(recBuf[(start+i)%recBuf.length]*g*32767)));
+  const buf=new ArrayBuffer(44+n*2), v=new DataView(buf), w=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+  w(0,'RIFF'); v.setUint32(4,36+n*2,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,n*2,true);
+  new Int16Array(buf,44).set(pcm);
+  const a=document.createElement('a'), d=new Date(), p=x=>String(x).padStart(2,'0');
+  a.href=URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
+  a.download=`tone-fish-voice-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.wav`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  msg.textContent=L().recSaved(Math.round(n/sr));
 }
 function processFrame(buf, sr, now){
   let rms=0; for(let i=0;i<buf.length;i++) rms+=buf[i]*buf[i];
@@ -709,11 +767,17 @@ function drawPitch(now){
   const plotW = W*0.62;
   if(recent.length){
     const c=median(recent.map(p=>p.st));
-    px.fillStyle='#2b2a28';
+    // draw the voice as a line: points less than 50 ms apart are joined, so each syllable shows as a curve
+    px.strokeStyle='#2b2a28'; px.fillStyle='#2b2a28'; px.lineWidth=2.5; px.lineJoin='round'; px.lineCap='round';
+    let prev=null;
+    px.beginPath();
     for(const p of recent){
       const x=plotW*(1-(now-p.t)/4000), y=H/2-(p.st-c)*H/24;
-      px.fillRect(x-1.5,y-1.5,3,3);
+      if(prev && p.t-prev.t<50 && Math.abs(p.st-prev.st)<5) px.lineTo(x,y); else px.moveTo(x,y);
+      prev=p;
     }
+    px.stroke();
+    for(const p of recent){ const x=plotW*(1-(now-p.t)/4000), y=H/2-(p.st-c)*H/24; px.fillRect(x-1,y-1,2,2); }
   }
   px.fillStyle='#b9b2a3'; px.font='11px '+CF;
   px.fillText(L().recent, 6, 14);
@@ -858,7 +922,8 @@ function applyTone(tone, source, info){
   const T=TONES[tone], b=game.bird, tgt=currentTarget();
   // Voice only counts while a glowing card is waiting to be read. Before it lights up and after it has
   // been read correctly, talking (or noise) must not move the fish. Keys and buttons always work.
-  if(source==='voice' && cfg.iso && !(tgt && tgt.litRem!=null && !tgt.answered)){ ignoreVoice('idle', info); return; }
+  // (counts as soon as the card is on screen, not only once it glows: people read a card the moment they see it)
+  if(source==='voice' && cfg.iso && !(tgt && !tgt.answered && (tgt.litRem!=null || tgt.x-game.dist < W))){ ignoreVoice('idle', info); return; }
   lastDet={tone, source, info}; renderDet();
   if(source==='voice') logRec(tone, info, null, tgt);
   game.stats[tone][0]++;
@@ -1409,7 +1474,6 @@ const levelBar=document.getElementById('levelBar'), gateMark=document.getElement
 let lastT=performance.now();
 function loop(now){
   const dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
-  if(micOn) processAudio(now);
   // level bar in decibels (-70 dB … -10 dB) so quiet voices still show; black line = current voice threshold
   const dbPct = v => Math.max(0, Math.min(100, (20*Math.log10(Math.max(v,1e-6))+70)/60*100));
   levelBar.style.width = dbPct(level)+'%';
