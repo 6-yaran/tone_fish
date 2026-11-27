@@ -146,8 +146,6 @@
       <button id="micBtn"></button>
       <div id="level"><div id="levelBar"></div><div id="gateMark"></div></div>
       <div id="micStatus"></div>
-      <button class="ghost" id="recBtn" style="width:100%;margin-top:8px;font-size:14px" data-i18n="recBtn"></button>
-      <p class="tip" id="recMsg" data-i18n="recTip"></p>
     </div>
 
     <div class="card" id="pitchCard">
@@ -165,7 +163,7 @@
 
     <details class="card" id="settingsCard">
       <summary data-i18n="settings"></summary>
-      <label class="chk"><input type="checkbox" id="s_iso" checked> <span data-i18n="sIso"></span></label>
+      <label class="chk"><input type="checkbox" id="s_iso"> <span data-i18n="sIso"></span></label>
       <label class="chk"><input type="checkbox" id="s_ns" checked> <span data-i18n="sNs"></span></label>
       <label class="sl"><span data-i18n="sSens"></span><output id="o_sens"></output></label>
       <input type="range" id="s_sens" min="1" max="10" step="1">
@@ -193,7 +191,7 @@ const I18N = {
     micOn:'🎤 마이크 켜기', micReady:'🎤 마이크 켜짐',
     micHint:'마이크가 꺼져 있어요. 키보드 1–4로도 플레이할 수 있어요.',
     micReadyHint:'중국어 한 음절을 말해 보고 음높이 곡선을 확인해 보세요.',
-    micErr:m=>`마이크를 열 수 없어요: ${m}. 마이크 허용 창에서 「허용」을 눌렀는지 확인해 주세요. 앱 안의 브라우저(카톡 등)에서 안 되면 Safari나 Chrome으로 열어 보세요.`,
+    micErr:m=>`마이크를 열 수 없어요. 「허용」을 눌렀는지 확인하고, 안 되면 Safari·Chrome으로 열어 주세요.`,
     pitchTitle:'실시간 음높이 (내 목소리)',
     detIdle:'한 번에 한 음절씩 말하고 잠깐 멈추세요.',
     recent:'최근 4초', lastSyl:'직전 음절',
@@ -208,10 +206,6 @@ const I18N = {
     menuMicHint:'먼저 마이크를 켜 주세요. 마이크 허용 창이 뜨면 「허용」을 눌러야 게임이 목소리를 들을 수 있어요.',
     sIso:'게임용 발음만 인식 (대화·잡음 무시)',
     sNs:'브라우저 잡음 제거·자동 음량 (2·4성이 잘 안 잡히면 꺼 보세요)',
-    recBtn:'🎙 최근 30초 녹음 저장 (.wav)',
-    recTip:'인식이 이상할 때 바로 누르면, 방금 말한 소리가 파일로 저장돼요. 이 컴퓨터에만 저장되고, 누를 때만 저장돼요.',
-    recEmpty:'저장할 소리가 아직 없어요. 마이크를 켜고 말한 뒤 눌러 주세요.',
-    recSaved:s=>`최근 ${s}초 녹음을 저장했어요 (다운로드 폴더).`,
     logBtn:'📋 인식 기록 복사',
     logTip:'바르게 말했는데 틀리게 인식되면, 이 버튼으로 기록을 복사해 보내 주세요. 음높이 숫자만 담기고 녹음은 저장되지 않아요.',
     logEmpty:'아직 기록이 없어요. 마이크로 몇 판 플레이한 뒤 눌러 주세요.',
@@ -266,7 +260,7 @@ const I18N = {
     micOn:'🎤 Turn on microphone', micReady:'🎤 Microphone on',
     micHint:'Microphone is off. You can also play with keys 1–4.',
     micReadyHint:'Say one Chinese syllable and watch your pitch curve.',
-    micErr:m=>`Can't open the microphone: ${m}. Make sure you tapped "Allow" on the microphone prompt. If it doesn't work inside an app's built-in browser, open the page in Safari or Chrome.`,
+    micErr:m=>`Can't open the microphone. Check that you tapped "Allow"; if it still fails, open the page in Safari or Chrome.`,
     pitchTitle:'Live pitch (your voice)',
     detIdle:'Say one syllable at a time, then pause briefly.',
     recent:'Last 4 s', lastSyl:'Last syllable',
@@ -281,10 +275,6 @@ const I18N = {
     menuMicHint:'Turn on the microphone first. When the permission prompt appears, tap "Allow" so the game can hear you.',
     sIso:'Only react to game reading (ignore talking & noise)',
     sNs:'Browser noise suppression & auto gain (try turning off if Tones 2/4 are missed)',
-    recBtn:'🎙 Save last 30 s of audio (.wav)',
-    recTip:'When recognition seems off, press this right away to save what you just said as a file. It is saved only on this computer, and only when you press.',
-    recEmpty:'Nothing to save yet. Turn on the microphone and speak first.',
-    recSaved:s=>`Saved the last ${s} s of audio (Downloads folder).`,
     logBtn:'📋 Copy recognition log',
     logTip:'If a correctly spoken tone is recognized wrong, copy the log with this button and send it in. It holds pitch numbers only; no audio is recorded.',
     logEmpty:'No log yet. Play a few rounds with the microphone first.',
@@ -368,9 +358,9 @@ const CF = '"PingFang SC","Microsoft YaHei","Noto Sans SC","Apple SD Gothic Neo"
 /* ============================================================
    Recognition settings
    ============================================================ */
-// sens 7 / minMs 80: a Tone 4 is short and fades fast, so a lower sensitivity or a longer minimum
-// throws real Tone 4s away. Talking and noise are kept out by the game-reading filter instead.
-const cfg = { sens:9, flat:1.6, minMs:80, endMs:160, iso:true, ns:true };
+// Same values as the Nov 23 17:30 version, whose recognition worked best on real play.
+// iso (only react to game reading) is an option, off by default so recognition behaves exactly like that version.
+const cfg = { sens:7, flat:1.6, minMs:100, endMs:160, iso:false, ns:true };
 // Adaptive voice gate: track the background-noise level and treat anything clearly above it as voice.
 // Sensitivity 1 → voice must be 5× the noise; 10 → 1.6×.
 let noiseFloor = 0.002, gate = 0.006;
@@ -387,7 +377,6 @@ bindSlider('min','minMs',v=>v+'');
 bindSlider('end','endMs',v=>v+'');
 document.getElementById('s_iso').onchange=e=>{ cfg.iso=e.target.checked; pendingSyl=null; };
 document.getElementById('logBtn').onclick=()=>copyRecLog();
-document.getElementById('recBtn').onclick=()=>saveRecording();
 // Browser noise suppression + auto gain on/off. If the microphone is already on, reopen it with the new setting.
 document.getElementById('s_ns').onchange=async e=>{
   cfg.ns=e.target.checked;
@@ -506,57 +495,18 @@ addEventListener('pointerdown', ()=>{ if(audioCtx && audioCtx.state==='suspended
 const seg={active:false, pts:[], start:0, last:0};
 const recent=[];          // pitch points from the last few seconds (live plot)
 let lastContour=null;     // contour of the last syllable
-/* ---------- Audio analysis, driven by the audio itself ----------
-   The pitch used to be read once per screen frame. When the browser slows its screen updates (window not
-   focused, covered, shown in a side panel, battery saver) that drops to a few reads a second, the pitch
-   track turns into scattered dots and short, fast tones (2 and 4) can't be recognised. Now every 16 ms of
-   microphone audio is analysed as it arrives, whatever the screen is doing. */
-const WIN_N=2048;                         // analysis window (samples)
-const REC_SEC=30;                         // keep the last 30 s of microphone audio for "save recording"
-let recBuf=null, recPos=0, recFilled=0;
-function startAudioAnalysis(node){
-  const sr=audioCtx.sampleRate, hop=Math.round(sr*0.016);
-  const ring=new Float32Array(WIN_N), win=new Float32Array(WIN_N);
-  let rpos=0, have=0, sinceHop=0;
-  recBuf=new Float32Array(Math.round(sr*REC_SEC)); recPos=0; recFilled=0;
-  const proc=audioCtx.createScriptProcessor(1024,1,1);
-  const mute=audioCtx.createGain(); mute.gain.value=0;            // must reach the output to keep running; silent
-  node.connect(proc); proc.connect(mute); mute.connect(audioCtx.destination);
-  proc.onaudioprocess=e=>{
-    const x=e.inputBuffer.getChannelData(0), tEnd=performance.now(), n=x.length;
-    // recording ring buffer
-    for(let i=0;i<n;i++){ recBuf[recPos]=x[i]; recPos=(recPos+1)%recBuf.length; }
-    recFilled=Math.min(recBuf.length, recFilled+n);
-    // analysis: one frame every 16 ms of audio, each with the time its last sample arrived
-    for(let i=0;i<n;i++){
-      ring[rpos]=x[i]; rpos=(rpos+1)%WIN_N; if(have<WIN_N) have++;
-      if(++sinceHop>=hop && have===WIN_N){
-        sinceHop=0;
-        for(let k=0;k<WIN_N;k++) win[k]=ring[(rpos+k)%WIN_N];
-        processFrame(win, sr, tEnd-(n-1-i)/sr*1000);
-      }
-    }
-  };
-  window.__audioProc=proc;                // keep a reference so it is never garbage-collected
+/* ---------- Audio analysis (as in the Nov 23 17:30 version) ----------
+   The pitch is read once per screen frame from an analyser, exactly like the version whose recognition
+   worked best. Keep the game in front while playing: a hidden or unfocused window slows screen frames. */
+let analyser=null, abuf=null;
+function processAudio(now){
+  analyser.getFloatTimeDomainData(abuf);
+  processFrame(abuf, audioCtx.sampleRate, now);
 }
-// Save the last 30 s of microphone audio as a .wav file (stays on this computer; only saved on click)
-function saveRecording(){
-  const msg=document.getElementById('recMsg');
-  if(!recBuf || recFilled < audioCtx.sampleRate*0.5){ msg.textContent=L().recEmpty; return; }
-  const sr=audioCtx.sampleRate, n=recFilled, pcm=new Int16Array(n);
-  const start=(recPos-n+recBuf.length)%recBuf.length;
-  let peak=1e-6; for(let i=0;i<n;i++) peak=Math.max(peak, Math.abs(recBuf[(start+i)%recBuf.length]));
-  const g=Math.min(30, 0.9/peak);         // normalise so quiet recordings are still clear to listen to
-  for(let i=0;i<n;i++) pcm[i]=Math.max(-32768, Math.min(32767, Math.round(recBuf[(start+i)%recBuf.length]*g*32767)));
-  const buf=new ArrayBuffer(44+n*2), v=new DataView(buf), w=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
-  w(0,'RIFF'); v.setUint32(4,36+n*2,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
-  v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,n*2,true);
-  new Int16Array(buf,44).set(pcm);
-  const a=document.createElement('a'), d=new Date(), p=x=>String(x).padStart(2,'0');
-  a.href=URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
-  a.download=`tone-fish-voice-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.wav`;
-  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
-  msg.textContent=L().recSaved(Math.round(n/sr));
+function startAudioAnalysis(node){
+  analyser = audioCtx.createAnalyser(); analyser.fftSize=2048;
+  node.connect(analyser);
+  abuf = new Float32Array(analyser.fftSize);
 }
 function processFrame(buf, sr, now){
   let rms=0; for(let i=0;i<buf.length;i++) rms+=buf[i]*buf[i];
@@ -749,27 +699,7 @@ function classify(all){
   const relStart = known ? start - spkMid : null;
   const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: known ? mn-spkLow : null, relDur, relStart};
   let tone, s3=null;
-  // Judge "level" on the steady middle of the syllable. At the edges the pitch is pushed around by the
-  // consonant and drops as the voice fades, so a perfectly good Tone 1 can span ~2 semitones overall
-  // and used to be heard as a small Tone 4 fall. Tone 4 falls much more than that.
-  const c0=Math.floor(wv.length*0.15), core=wv.slice(c0, wv.length-c0);
-  const coreRange = core.length>=3 ? Math.max(...core)-Math.min(...core) : range;
-  // ...but only for a syllable in the upper part of the voice: a low, flat-ish one is a Tone 3
-  const highEnough = known ? (relStart > -1 && mn - spkLow > 2) : (creak < 0.15 && lowFrac < 0.5);
-  // ...and only if the middle really stays level and the syllable isn't unusually short. A real Tone 4
-  // gets quiet fast: once its quiet tail is trimmed, what is left is a short, high stretch that falls only
-  // ~2 semitones. It keeps falling and it is short; a Tone 1 is neither.
-  const ct=Math.max(1, Math.floor(core.length/3));
-  const coreNet = core.length>=3 ? mean(core.slice(-ct)) - mean(core.slice(0,ct)) : end-start;
-  const shortSyl = known ? relDur < 0.7 : dur < 230;
-  // Speed of the pitch change. With background noise only the loudest middle of a syllable may keep a
-  // detectable pitch, so the total change looks small (a recorded Tone 4 fell just 1.7 semitones in 0.13 s).
-  // But a steady fall or rise faster than ~8 semitones/second is never Tone 1 (it drifts 3–4 st/s at most);
-  // the fall/rise branches below then decide between 2, 3 and 4.
-  const secs=Math.max(0.05,(wv.length-1)*0.016), net=end-start, rate=net/secs;
-  const steadyFall = -net >= 1.0 && -rate >= 8 && maxPos <= 0.35 && minPos >= 0.65;
-  const steadyRise =  net >= 1.0 &&  rate >= 8 && minPos <= 0.35 && maxPos >= 0.65;
-  if(!(steadyFall || steadyRise) && (range < cfg.flat || (coreRange < cfg.flat && Math.abs(coreNet) < 1.1 && !shortSyl && down < 3 && up < 3 && highEnough))) tone=1;
+  if(range < cfg.flat) tone=1;
   else {
     // Does the voice come back up after its lowest point? If not, it is a fall.
     let rises = up >= Math.max(th3, 0.35*down) && !(maxPos < minPos && minPos > 0.85);
@@ -783,10 +713,8 @@ function classify(all){
       // A fall that starts in the lower half of the voice and stays at the bottom is a Tone 3 said
       // without the final rise (very common); Tone 4 starts from the top of the voice.
       if(known){
-        if(relStart <= -1 && (mn <= spkLow + 2 || creak > 0.1 || lowFrac >= 0.45) && !(steadyFall && relStart > -2.5)) tone = 3;
-        // sits at the very bottom of the voice for a long time (a Tone 4 instead keeps falling to its very end;
-        // with a narrow voice range its end is also near the bottom)
-        else if(lowFrac >= 0.55 && mn <= spkLow + 1.5 && !(steadyFall && minPos >= 0.85)) tone = 3;
+        if(relStart <= -1 && (mn <= spkLow + 2 || creak > 0.1 || lowFrac >= 0.45)) tone = 3;
+        else if(lowFrac >= 0.55 && mn <= spkLow + 1.5) tone = 3;   // sits at the very bottom of the voice for a long time
       }
       else if(lowFrac >= 0.45 && minPos < 0.85) tone = 3;
     } else if(down < 0.6 && minPos < 0.3){
@@ -1531,6 +1459,7 @@ const levelBar=document.getElementById('levelBar'), gateMark=document.getElement
 let lastT=performance.now();
 function loop(now){
   const dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
+  if(micOn) processAudio(now);
   // level bar in decibels (-70 dB … -10 dB) so quiet voices still show; black line = current voice threshold
   const dbPct = v => Math.max(0, Math.min(100, (20*Math.log10(Math.max(v,1e-6))+70)/60*100));
   levelBar.style.width = dbPct(level)+'%';
