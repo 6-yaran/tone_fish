@@ -163,8 +163,6 @@
 
     <details class="card" id="settingsCard">
       <summary data-i18n="settings"></summary>
-      <label class="chk"><input type="checkbox" id="s_iso"> <span data-i18n="sIso"></span></label>
-      <label class="chk"><input type="checkbox" id="s_ns" checked> <span data-i18n="sNs"></span></label>
       <label class="sl"><span data-i18n="sSens"></span><output id="o_sens"></output></label>
       <input type="range" id="s_sens" min="1" max="10" step="1">
       <label class="sl"><span data-i18n="sFlat"></span><output id="o_flat"></output></label>
@@ -201,20 +199,14 @@ const I18N = {
     sFlat:'평탄 기준 (반음 · 높을수록 1성으로 판정되기 쉬움)',
     sMin:'이보다 짧은 소리는 무시 (ms · 잡음 방지)',
     sEnd:'음절이 끝났다고 보는 멈춤 길이 (ms)',
-    tip:'소리 크기가 아니라 음높이의 모양으로 판별해요. 1성은 높고 평평하게, 2성은 올라가게, 3성은 내려갔다 올라오게, 4성은 높은 데서 뚝 떨어지게 말하세요. 주변 소음에 맞춰 기준이 자동으로 조정돼요. 음량 막대의 검은 선을 넘으면 목소리로 인식해요. “게임용 발음만 인식”을 켜 두면 앞뒤로 잠깐 멈춘 한 음절만, 그리고 반짝이는 카드가 있을 때만 반응해서 옆 사람과의 대화나 잡음은 무시해요.',
+    tip:'소리 크기가 아니라 음높이의 모양으로 판별해요. 1성은 높고 평평하게, 2성은 올라가게, 3성은 내려갔다 올라오게, 4성은 높은 데서 뚝 떨어지게 말하세요. 주변 소음에 맞춰 기준이 자동으로 조정돼요. 음량 막대의 검은 선을 넘으면 목소리로 인식해요.',
     toneName:n=>`${n}성`,
     menuMicHint:'먼저 마이크를 켜 주세요. 마이크 허용 창이 뜨면 「허용」을 눌러야 게임이 목소리를 들을 수 있어요.',
-    sIso:'게임용 발음만 인식 (대화·잡음 무시)',
-    sNs:'브라우저 잡음 제거·자동 음량 (2·4성이 잘 안 잡히면 꺼 보세요)',
     logBtn:'📋 인식 기록 복사',
     logTip:'바르게 말했는데 틀리게 인식되면, 이 버튼으로 기록을 복사해 보내 주세요. 음높이 숫자만 담기고 녹음은 저장되지 않아요.',
     logEmpty:'아직 기록이 없어요. 마이크로 몇 판 플레이한 뒤 눌러 주세요.',
     logCopied:(n,m)=>`${n}개 음절 기록을 복사했어요 (그중 다르게 인식된 것 ${m}개). 붙여넣어 보내 주세요.`,
     logManual:'자동 복사가 막혀 있어요. 아래 글을 전부 선택해 복사해 주세요.',
-    ignored:{talk:'이어서 말한 소리라 무시했어요. 한 글자만 말하고 앞뒤로 잠깐 멈추세요.',
-             noise:'목소리가 아닌 소리(잡음)라 무시했어요.',
-             long:'너무 길게 이어진 소리라 무시했어요.',
-             idle:'지금은 읽을 카드가 없어서 움직이지 않았어요.'},
     action:{1:'앞으로 돌진 (산호벽 깨기)',2:'한 칸 위로',3:'내려갔다 올라오기 (암초 밑 통과)',4:'한 칸 아래로'},
     moveShort:{1:'돌진해서 산호벽 깨기',2:'위로 한 칸',3:'암초 밑으로 통과',4:'아래로 한 칸'},
     info:(d,r)=>`길이 ${d}ms · 음높이 변화 ${r} 반음`,
@@ -270,20 +262,14 @@ const I18N = {
     sFlat:'Level-tone threshold (semitones · higher = more Tone 1)',
     sMin:'Ignore sounds shorter than (ms · filters noise)',
     sEnd:'Pause that ends a syllable (ms)',
-    tip:'Detection uses the shape of your pitch, not loudness. Tone 1: high and level. Tone 2: rising. Tone 3: dips low, then rises. Tone 4: falls sharply from high. The threshold adapts to background noise automatically; anything past the black line on the level bar counts as voice. With "Only react to game reading" on, the game only responds to a single syllable with a short pause before and after, and only while a card is glowing, so chatting with people nearby and background noise are ignored.',
+    tip:'Detection uses the shape of your pitch, not loudness. Tone 1: high and level. Tone 2: rising. Tone 3: dips low, then rises. Tone 4: falls sharply from high. The threshold adapts to background noise automatically; anything past the black line on the level bar counts as voice.',
     toneName:n=>`Tone ${n}`,
     menuMicHint:'Turn on the microphone first. When the permission prompt appears, tap "Allow" so the game can hear you.',
-    sIso:'Only react to game reading (ignore talking & noise)',
-    sNs:'Browser noise suppression & auto gain (try turning off if Tones 2/4 are missed)',
     logBtn:'📋 Copy recognition log',
     logTip:'If a correctly spoken tone is recognized wrong, copy the log with this button and send it in. It holds pitch numbers only; no audio is recorded.',
     logEmpty:'No log yet. Play a few rounds with the microphone first.',
     logCopied:(n,m)=>`Copied the log of ${n} syllables (${m} recognized differently from the card). Paste it to send.`,
     logManual:'Automatic copy is blocked. Select all the text below and copy it.',
-    ignored:{talk:'Ignored: sounded like connected speech. Say one syllable, with a short pause before and after.',
-             noise:'Ignored: not a voice (noise).',
-             long:'Ignored: the sound went on too long.',
-             idle:'No card to read right now, so the fish didn\'t move.'},
     action:{1:'Dash forward (smash coral walls)',2:'Swim up one lane',3:'Dip down and back (pass under reef rocks)',4:'Swim down one lane'},
     moveShort:{1:'dash and smash coral walls',2:'swim up one lane',3:'dip under reef rocks',4:'swim down one lane'},
     info:(d,r)=>`${d} ms · pitch change ${r} semitones`,
@@ -358,9 +344,8 @@ const CF = '"PingFang SC","Microsoft YaHei","Noto Sans SC","Apple SD Gothic Neo"
 /* ============================================================
    Recognition settings
    ============================================================ */
-// Same values as the Nov 23 17:30 version, whose recognition worked best on real play.
-// iso (only react to game reading) is an option, off by default so recognition behaves exactly like that version.
-const cfg = { sens:7, flat:1.6, minMs:100, endMs:160, iso:false, ns:true };
+// Recognition exactly as in the last Nov 23 version.
+const cfg = { sens:7, flat:1.6, minMs:100, endMs:160 };
 // Adaptive voice gate: track the background-noise level and treat anything clearly above it as voice.
 // Sensitivity 1 → voice must be 5× the noise; 10 → 1.6×.
 let noiseFloor = 0.002, gate = 0.006;
@@ -375,17 +360,7 @@ bindSlider('sens','sens',v=>v+'');
 bindSlider('flat','flat',v=>v.toFixed(1));
 bindSlider('min','minMs',v=>v+'');
 bindSlider('end','endMs',v=>v+'');
-document.getElementById('s_iso').onchange=e=>{ cfg.iso=e.target.checked; pendingSyl=null; };
 document.getElementById('logBtn').onclick=()=>copyRecLog();
-// Browser noise suppression + auto gain on/off. If the microphone is already on, reopen it with the new setting.
-document.getElementById('s_ns').onchange=async e=>{
-  cfg.ns=e.target.checked;
-  if(!micOn) return;
-  try{ micStream && micStream.getTracks().forEach(t=>t.stop()); }catch(_){}
-  try{ await audioCtx.close(); }catch(_){}
-  micOn=false; seg.active=false; pendingSyl=null; noiseFloor=0.002;
-  await micBtn.onclick();
-};
 
 /* ============================================================
    Side panel: legend & buttons
@@ -453,7 +428,6 @@ function renderMic(){
   micBtn.disabled = micOn;
   micStatus.textContent = micErrMsg ? L().micErr(micErrMsg) : (micOn ? L().micReadyHint : L().micHint);
 }
-let micStream=null;
 // Turn the microphone on. Returns true when it is listening. Called from the side-panel button, from the
 // start menu, and automatically by "Start game" / "Tutorial" so the permission prompt comes BEFORE play.
 async function turnMicOn(){
@@ -465,8 +439,8 @@ async function turnMicOn(){
     // Auto gain lifts a quiet / distant voice; the browser's noise suppression removes steady hum.
     // Noise suppression can also flatten the quiet start of Tone 2 and the fading end of Tone 4 (a
     // recording showed only the loudest ~0.25 s of each syllable still had a pitch), so it can be switched off.
-    const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:cfg.ns,autoGainControl:cfg.ns}});
-    micStream=stream; audioCtx=ctx;
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:true,autoGainControl:true}});
+    audioCtx=ctx;
     if(audioCtx.state==='suspended'){ try{ await audioCtx.resume(); }catch(_){} }
     const src = audioCtx.createMediaStreamSource(stream);
     // Keep only the voice-pitch band: cut rumble below 70 Hz and hiss above 1.5 kHz
@@ -535,40 +509,7 @@ function processFrame(buf, sr, now){
     seg.pts.push({t:now, st:null, rms}); seg.last=now;
   }
   if(seg.active && (now-seg.last>cfg.endMs || now-seg.lastPitch>450 || now-seg.start>1500)) finishSeg();
-  // A game syllable is only acted on once the pause after it is long enough. If another syllable has
-  // already started close behind it, wait: that one decides whether this was conversation (see finishSeg).
-  if(pendingSyl && now>=pendingSyl.at && !(seg.active && seg.start-pendingSyl.end < ISO_GAP)){
-    const r=pendingSyl.r; pendingSyl=null; applyTone(r.tone,'voice',r);
-  }
   while(recent.length && now-recent[0].t>4000) recent.shift();
-}
-
-/* ---------- Only react to syllables said FOR the game ----------
-   Reading a card = one syllable, said on its own, with a pause before and after, in a clear steady voice.
-   Conversation = syllables strung together with short gaps; noise = no steady pitch. Both are ignored. */
-const ISO_GAP=250;         // ms without voice pitch needed before and after a game syllable
-const MAX_SYL_MS=1000;     // a single read syllable is shorter than this; longer runs are speech or humming
-let prevSylEnd=-1e9;       // end of the last real syllable (any, accepted or not)
-let pendingSyl=null;       // a syllable waiting for its trailing pause: {r, end, at}
-// Noise check: real voice has pitch in most frames and that pitch moves smoothly.
-// Returns a reason string when the sound is not a voice, or null when it looks like one.
-function noiseReason(all){
-  const p=all.filter(x=>x.st!=null);
-  if(p.length<4) return null;                                  // too short: classify() ignores it anyway
-  const pitchedFrac=p.length/all.length;
-  let pairs=0, jumpy=0;
-  for(let i=1;i<all.length;i++){
-    if(all[i].st==null || all[i-1].st==null) continue;
-    const d=Math.abs(all[i].st-all[i-1].st), d2=Math.min(d, Math.abs(d-12));   // forgive octave slips
-    pairs++; if(d2>2) jumpy++;
-  }
-  if(pitchedFrac < 0.4) return 'noise';
-  if(pairs>=3 && jumpy/pairs > 0.3) return 'noise';
-  return null;
-}
-function ignoreVoice(reason, r){
-  lastDet={tone:r?r.tone:null, source:'voice', info:r||null, ignored:reason}; renderDet();
-  if(state==='play' && reason!=='idle') logRec(r?r.tone:null, r, reason, currentTarget());
 }
 
 /* ---------- Recognition log ----------
@@ -600,19 +541,8 @@ async function copyRecLog(){
 }
 function finishSeg(){
   seg.active=false;
-  if(cfg.iso){ const nr=noiseReason(seg.pts); if(nr){ ignoreVoice(nr); return; } }
   const r=classify(seg.pts);
-  if(!r) return;
-  lastContour=r;
-  if(!cfg.iso){ applyTone(r.tone,'voice',r); return; }
-  const gapBefore=seg.start-prevSylEnd;
-  prevSylEnd=seg.lastPitch;
-  if(pendingSyl && gapBefore<ISO_GAP){ pendingSyl=null; ignoreVoice('talk', r); return; }  // two in a row: talking
-  // (No "two syllables merged together" check here: Tone 3's quiet, creaky low point looks exactly like
-  //  the gap between two syllables, and such a check threw away most real Tone 3s.)
-  if(gapBefore<ISO_GAP){ pendingSyl=null; ignoreVoice('talk', r); return; }
-  if(r.dur>MAX_SYL_MS){ ignoreVoice('long', r); return; }
-  pendingSyl={r, end:seg.lastPitch, at:seg.lastPitch+ISO_GAP};
+  if(r){ lastContour=r; applyTone(r.tone,'voice',r); }
 }
 
 /* ---------- Tone classification from pitch-contour shape ---------- */
@@ -879,25 +809,18 @@ const detTone=document.getElementById('detTone'), detInfo=document.getElementByI
 let lastDet=null;
 function renderDet(){
   if(!lastDet){ detTone.textContent='—'; detTone.style.color=''; detInfo.textContent=L().detIdle; return; }
-  const {tone, source, info, ignored} = lastDet, T=TONES[tone];
-  if(ignored){   // heard, but not treated as a game syllable: say why, in grey
-    detTone.textContent = tone ? toneName(tone) : '—'; detTone.style.color='#b9b2a3';
-    detInfo.textContent = L().ignored[ignored]; return;
-  }
+  const {tone, source, info} = lastDet, T=TONES[tone];
   detTone.textContent=toneName(tone); detTone.style.color=T.color;
   const extra = info ? L().info(Math.round(info.dur), info.range.toFixed(1))
               : (source==='key' ? L().srcKey : L().srcBtn);
   detInfo.innerHTML = `${T.icon} ${L().action[tone]}<br>${extra}`;
 }
 function applyTone(tone, source, info){
-  if(state!=='play'){ lastDet={tone, source, info}; renderDet(); return; }
-  const T=TONES[tone], b=game.bird, tgt=currentTarget();
-  // Voice only counts while a glowing card is waiting to be read. Before it lights up and after it has
-  // been read correctly, talking (or noise) must not move the fish. Keys and buttons always work.
-  // (counts as soon as the card is on screen, not only once it glows: people read a card the moment they see it)
-  if(source==='voice' && cfg.iso && !(tgt && !tgt.answered && (tgt.litRem!=null || tgt.x-game.dist < W))){ ignoreVoice('idle', info); return; }
   lastDet={tone, source, info}; renderDet();
-  if(source==='voice') logRec(tone, info, null, tgt);
+  if(state!=='play') return;
+
+  const T=TONES[tone], b=game.bird, tgt=currentTarget();
+  if(source==='voice') logRec(tone, info, null, tgt);   // recognition log only (does not change the result)
   game.stats[tone][0]++;
   if(tgt && !tgt.answered){
     const wd=`${tgt.word[0]} ${tgt.word[1]} = ${meaning(tgt.word)}`;
