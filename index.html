@@ -350,7 +350,9 @@ const CF = '"PingFang SC","Microsoft YaHei","Noto Sans SC","Apple SD Gothic Neo"
 /* ============================================================
    Recognition settings
    ============================================================ */
-const cfg = { sens:5, flat:1.6, minMs:100, endMs:160, iso:true };
+// sens 7 / minMs 80: a Tone 4 is short and fades fast, so a lower sensitivity or a longer minimum
+// throws real Tone 4s away. Talking and noise are kept out by the game-reading filter instead.
+const cfg = { sens:7, flat:1.6, minMs:80, endMs:160, iso:true };
 // Adaptive voice gate: track the background-noise level and treat anything clearly above it as voice.
 // Sensitivity 1 → voice must be 5× the noise; 10 → 1.6×.
 let noiseFloor = 0.002, gate = 0.006;
@@ -521,23 +523,6 @@ function noiseReason(all){
   if(pairs>=3 && jumpy/pairs > 0.3) return 'noise';
   return null;
 }
-// Two syllables said close together (normal talking) can merge into one segment. Spot the join:
-// a short silence inside the segment, or a deep dip in loudness with loud voice on both sides.
-function multiSyllable(all){
-  const n=all.length; if(n<6) return false;
-  for(let i=1;i<n;i++){
-    if(all[i].t-all[i-1].t >= 100){
-      const a=all.slice(0,i).filter(p=>p.st!=null).length, b=all.slice(i).filter(p=>p.st!=null).length;
-      if(a>=4 && b>=4) return true;
-    }
-  }
-  const r=all.map(p=>p.rms), s=r.map((_,i)=>(r[Math.max(0,i-1)]+r[i]+r[Math.min(n-1,i+1)])/3), peak=Math.max(...s);
-  for(let i=2;i<n-2;i++){
-    if(s[i] >= 0.25*peak) continue;
-    if(Math.max(...s.slice(0,i)) >= 0.6*peak && Math.max(...s.slice(i+1)) >= 0.6*peak) return true;
-  }
-  return false;
-}
 function ignoreVoice(reason, r){
   lastDet={tone:r?r.tone:null, source:'voice', info:r||null, ignored:reason}; renderDet();
   if(state==='play' && reason!=='idle') logRec(r?r.tone:null, r, reason, currentTarget());
@@ -580,7 +565,9 @@ function finishSeg(){
   const gapBefore=seg.start-prevSylEnd;
   prevSylEnd=seg.lastPitch;
   if(pendingSyl && gapBefore<ISO_GAP){ pendingSyl=null; ignoreVoice('talk', r); return; }  // two in a row: talking
-  if(gapBefore<ISO_GAP || multiSyllable(seg.pts)){ pendingSyl=null; ignoreVoice('talk', r); return; }
+  // (No "two syllables merged together" check here: Tone 3's quiet, creaky low point looks exactly like
+  //  the gap between two syllables, and such a check threw away most real Tone 3s.)
+  if(gapBefore<ISO_GAP){ pendingSyl=null; ignoreVoice('talk', r); return; }
   if(r.dur>MAX_SYL_MS){ ignoreVoice('long', r); return; }
   pendingSyl={r, end:seg.lastPitch, at:seg.lastPitch+ISO_GAP};
 }
@@ -676,7 +663,13 @@ function classify(all){
   const coreRange = core.length>=3 ? Math.max(...core)-Math.min(...core) : range;
   // ...but only for a syllable in the upper part of the voice: a low, flat-ish one is a Tone 3
   const highEnough = known ? (relStart > -1 && mn - spkLow > 2) : (creak < 0.15 && lowFrac < 0.5);
-  if(range < cfg.flat || (coreRange < cfg.flat && down < 3 && up < 3 && highEnough)) tone=1;
+  // ...and only if the middle really stays level and the syllable isn't unusually short. A real Tone 4
+  // gets quiet fast: once its quiet tail is trimmed, what is left is a short, high stretch that falls only
+  // ~2 semitones. It keeps falling and it is short; a Tone 1 is neither.
+  const ct=Math.max(1, Math.floor(core.length/3));
+  const coreNet = core.length>=3 ? mean(core.slice(-ct)) - mean(core.slice(0,ct)) : end-start;
+  const shortSyl = known ? relDur < 0.7 : dur < 230;
+  if(range < cfg.flat || (coreRange < cfg.flat && Math.abs(coreNet) < 1.1 && !shortSyl && down < 3 && up < 3 && highEnough)) tone=1;
   else {
     // Does the voice come back up after its lowest point? If not, it is a fall.
     let rises = up >= Math.max(th3, 0.35*down) && !(maxPos < minPos && minPos > 0.85);
