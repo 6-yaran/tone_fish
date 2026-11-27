@@ -224,7 +224,7 @@ const I18N = {
     menuP1:'장애물마다 중국어 글자가 붙어 있어요. <b>소리 내어 읽으면</b>, 성조가 맞을 때 물고기가 그에 맞는 동작을 해요.',
     menuP2:'글자 카드에는 한자와 병음이 나오고, “말하세요” 안내 막대에는 뜻도 함께 나와요.',
     menuP3:'한 번에 한 음절씩 말하고 잠깐 멈추세요. 마이크가 없으면 키보드 1–4, 스페이스바는 일시정지예요.',
-    slow:'느리게 (입문)', mid:'보통', fast:'빠르게', start:'게임 시작',
+    slow:'느린 속도 (입문)', mid:'보통 속도', fast:'빠른 속도', start:'게임 시작',
     overTitle:'게임 종료', overScore:(s,b)=>`점수 <b>${s}</b> · 최장 연속 <b>${b}</b>`,
     thTone:'성조', thSaid:'말한 횟수', thOk:'목표 글자 정답',
     overTip:'정답이 가장 적은 성조를 더 연습해 보세요.',
@@ -293,7 +293,7 @@ const I18N = {
     menuP1:'Every obstacle carries a Chinese character. <b>Read it out loud</b>: if your tone is right, the fish makes the matching move.',
     menuP2:'Cards show the character and its pinyin; the “Say:” bar also shows its meaning.',
     menuP3:'Say one syllable at a time and pause briefly. No microphone? Use keys 1–4. Space pauses.',
-    slow:'Slow (beginner)', mid:'Normal', fast:'Fast', start:'Start game',
+    slow:'Slow speed (beginner)', mid:'Normal speed', fast:'Fast speed', start:'Start game',
     overTitle:'Game over', overScore:(s,b)=>`Score <b>${s}</b> · Best streak <b>${b}</b>`,
     thTone:'Tone', thSaid:'Times said', thOk:'Correct on target',
     overTip:'Practice the tone with the fewest correct answers.',
@@ -631,7 +631,10 @@ function pct(arr,p){ const s=[...arr].sort((x,y)=>x-y); return s[Math.min(s.leng
 // Uses what listeners use: how late the turning point comes, how far the voice first drops,
 // how long it stays low (often creaky), whether that low point is the speaker's floor, and length.
 function score3(f){
-  let s = 3.0*(f.minPos - 0.42)
+  // turning point: where the lowest point is, or, for a syllable that sits at the bottom first, where it
+  // leaves the bottom and starts to rise
+  const turn = f.lowHold >= 0.45 ? Math.max(f.minPos, f.lowEnd) : f.minPos;
+  let s = 3.0*(turn - 0.42)
         + 0.6*(Math.min(f.down,4) - 1.0)
         + 2.5*(f.lowFrac - 0.3)
         + 3.0*f.creak;
@@ -695,9 +698,16 @@ function classify(all){
   const relDur = known ? dur/median(voiceHist.durs) : null;
   const lowBand = mn + Math.max(0.7, 0.15*up);
   const lowFrac = wv.filter(x=>x<=lowBand).length / wv.length;
+  // How long the voice sits flat at its bottom before rising, measured in the lowest quarter of the rise
+  // (at most 0.7 st, so a narrow voice range is judged on its own scale), and where that rise begins.
+  // A Tone 3 can start low, stay there, then jump up; a Tone 2 starts rising early.
+  const flatBand = mn + Math.min(0.7, Math.max(0.3, 0.25*up));
+  const lowHold = wv.filter(x=>x<=flatBand).length / wv.length;
+  let lastLow=0; for(let i=0;i<wv.length;i++) if(wv[i]<=flatBand) lastLow=i;
+  const lowEnd = lastLow/(wv.length-1);
   // how high the syllable starts within this speaker's range: Tone 4 starts at the top, Tones 2 and 3 lower
   const relStart = known ? start - spkMid : null;
-  const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: known ? mn-spkLow : null, relDur, relStart};
+  const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: known ? mn-spkLow : null, relDur, relStart, lowHold, lowEnd};
   let tone, s3=null;
   if(range < cfg.flat) tone=1;
   else {
@@ -717,8 +727,10 @@ function classify(all){
         else if(lowFrac >= 0.55 && mn <= spkLow + 1.5) tone = 3;   // sits at the very bottom of the voice for a long time
       }
       else if(lowFrac >= 0.45 && minPos < 0.85) tone = 3;
-    } else if(down < 0.6 && minPos < 0.3){
-      tone = 2;   // rises from the start with no real dip: Tone 3 always drops first
+    } else if(down < 0.6 && minPos < 0.3 && lowHold < 0.45){
+      tone = 2;   // rises from the start with no real dip and without sitting at the bottom first
+    } else if(lowHold >= 0.45 && lowEnd >= 0.35 && maxPos - lowEnd <= 0.35){
+      tone = 3;   // sits flat at the bottom for a good part of the syllable, then jumps up: Tone 3 said from a low start
     } else {
       s3 = score3(feats);
       tone = s3 > 0.3 ? 3 : 2;
