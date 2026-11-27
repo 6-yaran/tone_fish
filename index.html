@@ -50,6 +50,9 @@
   .legend .ex{color:var(--muted);font-size:13px}
   .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
   .keys button{padding:8px 0;font-size:14px}
+  .micBig{width:100%;padding:13px 16px;font-size:17px;background:#2f9e44;margin:8px 0 2px}
+  .micHintMenu{font-size:13px !important;margin:2px 0 8px !important}
+  .micState{color:#2f9e44 !important;font-weight:700;margin:6px 0 8px !important}
   label.chk{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:10px 0 4px;line-height:1.4;cursor:pointer}
   label.chk input{margin-top:2px}
   label.sl{display:block;font-size:13px;margin:8px 0 2px;color:var(--muted)}
@@ -190,7 +193,7 @@ const I18N = {
     micOn:'🎤 마이크 켜기', micReady:'🎤 마이크 켜짐',
     micHint:'마이크가 꺼져 있어요. 키보드 1–4로도 플레이할 수 있어요.',
     micReadyHint:'중국어 한 음절을 말해 보고 음높이 곡선을 확인해 보세요.',
-    micErr:m=>`마이크를 열 수 없어요: ${m} (http://localhost 로 페이지를 열고 마이크 권한을 허용하세요)`,
+    micErr:m=>`마이크를 열 수 없어요: ${m}. 마이크 허용 창에서 「허용」을 눌렀는지 확인해 주세요. 앱 안의 브라우저(카톡 등)에서 안 되면 Safari나 Chrome으로 열어 보세요.`,
     pitchTitle:'실시간 음높이 (내 목소리)',
     detIdle:'한 번에 한 음절씩 말하고 잠깐 멈추세요.',
     recent:'최근 4초', lastSyl:'직전 음절',
@@ -202,6 +205,7 @@ const I18N = {
     sEnd:'음절이 끝났다고 보는 멈춤 길이 (ms)',
     tip:'소리 크기가 아니라 음높이의 모양으로 판별해요. 1성은 높고 평평하게, 2성은 올라가게, 3성은 내려갔다 올라오게, 4성은 높은 데서 뚝 떨어지게 말하세요. 주변 소음에 맞춰 기준이 자동으로 조정돼요. 음량 막대의 검은 선을 넘으면 목소리로 인식해요. “게임용 발음만 인식”을 켜 두면 앞뒤로 잠깐 멈춘 한 음절만, 그리고 반짝이는 카드가 있을 때만 반응해서 옆 사람과의 대화나 잡음은 무시해요.',
     toneName:n=>`${n}성`,
+    menuMicHint:'먼저 마이크를 켜 주세요. 마이크 허용 창이 뜨면 「허용」을 눌러야 게임이 목소리를 들을 수 있어요.',
     sIso:'게임용 발음만 인식 (대화·잡음 무시)',
     sNs:'브라우저 잡음 제거·자동 음량 (2·4성이 잘 안 잡히면 꺼 보세요)',
     recBtn:'🎙 최근 30초 녹음 저장 (.wav)',
@@ -262,7 +266,7 @@ const I18N = {
     micOn:'🎤 Turn on microphone', micReady:'🎤 Microphone on',
     micHint:'Microphone is off. You can also play with keys 1–4.',
     micReadyHint:'Say one Chinese syllable and watch your pitch curve.',
-    micErr:m=>`Can't open the microphone: ${m} (open the page via http://localhost and allow microphone access)`,
+    micErr:m=>`Can't open the microphone: ${m}. Make sure you tapped "Allow" on the microphone prompt. If it doesn't work inside an app's built-in browser, open the page in Safari or Chrome.`,
     pitchTitle:'Live pitch (your voice)',
     detIdle:'Say one syllable at a time, then pause briefly.',
     recent:'Last 4 s', lastSyl:'Last syllable',
@@ -274,6 +278,7 @@ const I18N = {
     sEnd:'Pause that ends a syllable (ms)',
     tip:'Detection uses the shape of your pitch, not loudness. Tone 1: high and level. Tone 2: rising. Tone 3: dips low, then rises. Tone 4: falls sharply from high. The threshold adapts to background noise automatically; anything past the black line on the level bar counts as voice. With "Only react to game reading" on, the game only responds to a single syllable with a short pause before and after, and only while a card is glowing, so chatting with people nearby and background noise are ignored.',
     toneName:n=>`Tone ${n}`,
+    menuMicHint:'Turn on the microphone first. When the permission prompt appears, tap "Allow" so the game can hear you.',
     sIso:'Only react to game reading (ignore talking & noise)',
     sNs:'Browser noise suppression & auto gain (try turning off if Tones 2/4 are missed)',
     recBtn:'🎙 Save last 30 s of audio (.wav)',
@@ -365,7 +370,7 @@ const CF = '"PingFang SC","Microsoft YaHei","Noto Sans SC","Apple SD Gothic Neo"
    ============================================================ */
 // sens 7 / minMs 80: a Tone 4 is short and fades fast, so a lower sensitivity or a longer minimum
 // throws real Tone 4s away. Talking and noise are kept out by the game-reading filter instead.
-const cfg = { sens:7, flat:1.6, minMs:80, endMs:160, iso:true, ns:true };
+const cfg = { sens:9, flat:1.6, minMs:80, endMs:160, iso:true, ns:true };
 // Adaptive voice gate: track the background-noise level and treat anything clearly above it as voice.
 // Sensitivity 1 → voice must be 5× the noise; 10 → 1.6×.
 let noiseFloor = 0.002, gate = 0.006;
@@ -460,15 +465,20 @@ function renderMic(){
   micStatus.textContent = micErrMsg ? L().micErr(micErrMsg) : (micOn ? L().micReadyHint : L().micHint);
 }
 let micStream=null;
-micBtn.onclick = async ()=>{
-  if(micOn) return;
+// Turn the microphone on. Returns true when it is listening. Called from the side-panel button, from the
+// start menu, and automatically by "Start game" / "Tutorial" so the permission prompt comes BEFORE play.
+async function turnMicOn(){
+  if(micOn) return true;
+  // iPhone: the audio engine has to be created inside the tap itself, before waiting for the permission
+  // prompt; created afterwards it can stay "suspended" and never hear anything.
+  const ctx = new (window.AudioContext||window.webkitAudioContext)();
   try{
     // Auto gain lifts a quiet / distant voice; the browser's noise suppression removes steady hum.
     // Noise suppression can also flatten the quiet start of Tone 2 and the fading end of Tone 4 (a
     // recording showed only the loudest ~0.25 s of each syllable still had a pitch), so it can be switched off.
     const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:cfg.ns,autoGainControl:cfg.ns}});
-    micStream=stream;
-    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    micStream=stream; audioCtx=ctx;
+    if(audioCtx.state==='suspended'){ try{ await audioCtx.resume(); }catch(_){} }
     const src = audioCtx.createMediaStreamSource(stream);
     // Keep only the voice-pitch band: cut rumble below 70 Hz and hiss above 1.5 kHz
     const hp = audioCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=70;
@@ -478,9 +488,19 @@ micBtn.onclick = async ()=>{
     micOn=true; micErrMsg=null;
   }catch(e){
     micErrMsg = e.message || String(e);
+    try{ ctx.close(); }catch(_){}
   }
   renderMic();
+  return micOn;
+}
+micBtn.onclick = async ()=>{
+  const s=document.getElementById('spd'); if(s) speedBase=+s.value;
+  const ok=await turnMicOn();
+  if(state==='menu') showMenu();          // the start menu shows the microphone state too
+  return ok;
 };
+// If the phone suspends audio anyway (e.g. after a call or switching apps), wake it on the next touch
+addEventListener('pointerdown', ()=>{ if(audioCtx && audioCtx.state==='suspended') audioCtx.resume().catch(()=>{}); }, true);
 
 /* ---------- Split continuous pitch into syllables ---------- */
 const seg={active:false, pts:[], start:0, last:0};
@@ -1289,7 +1309,13 @@ function showMenu(){
   state='menu'; overlay.classList.remove('hidden');
   const moves=[1,2,3,4].map(t=>`<b style="color:${TONES[t].color}">${toneName(t)} ${TONES[t].icon}</b><span>${L().moveShort[t]}</span>`).join('');
   const first = !tutDone();
+  // Microphone first: the permission prompt should appear here, not after the fish is already swimming
+  const micBlock = micOn
+    ? `<p class="micState">${L().micReady}</p>`
+    : `<button id="menuMic" class="micBig">${L().micOn}</button>
+       <p class="micHintMenu">${micErrMsg ? L().micErr(micErrMsg) : L().menuMicHint}</p>`;
   dlg.innerHTML=`<h2>${L().title}</h2>
+    ${micBlock}
     <p>${L().menuP1}</p>
     <div class="moves">${moves}</div>
     <p>${L().menuP2}</p>
@@ -1303,8 +1329,15 @@ function showMenu(){
     </div>
     ${first ? '' : `<button class="link" id="tutB">${L().tutorialAgain}</button>`}`;
   document.getElementById('spd').value=speedBase;
-  document.getElementById('go').onclick=start;
-  document.getElementById('tutB').onclick=startTutorial;
+  document.getElementById('go').onclick=withMic(start);
+  document.getElementById('tutB').onclick=withMic(startTutorial);
+  const mb=document.getElementById('menuMic');
+  if(mb) mb.onclick=async ()=>{ const s=document.getElementById('spd'); if(s) speedBase=+s.value; await turnMicOn(); if(state==='menu') showMenu(); };
+}
+// Start buttons turn the microphone on first (the permission prompt appears while still in the menu), then
+// start. If the player declines, the game starts anyway and can be played with keys / buttons 1–4.
+function withMic(fn){
+  return async ()=>{ const s=document.getElementById('spd'); if(s) speedBase=+s.value; await turnMicOn(); fn(); };
 }
 function start(){
   endTutorialMode();
@@ -1352,8 +1385,8 @@ function renderTutDone(){
   dlg.innerHTML=`<h2>${L().tutDoneTitle}</h2>
     <ul class="tips">${L().tutDoneTips.map(t=>`<li>${t}</li>`).join('')}</ul>
     <div class="row main"><button id="go">▶ ${L().start}</button><button class="ghost" id="tutB">${L().tutorialAgain}</button></div>`;
-  document.getElementById('go').onclick=start;
-  document.getElementById('tutB').onclick=startTutorial;
+  document.getElementById('go').onclick=withMic(start);
+  document.getElementById('tutB').onclick=withMic(startTutorial);
 }
 coachSkip.onclick=()=>finishTutorial();
 // Wide screens: keep the bubble right of the fish and in the half of the screen away from the glowing card
