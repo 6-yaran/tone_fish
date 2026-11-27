@@ -644,7 +644,11 @@ function classify(all){
   // Small pitch change: normally Tone 1. But if much of the syllable was voiced without a clear pitch
   // (creaky voice at the low point), it is Tone 3: in recorded play no Tone 1 ever had any creak,
   // while most heavily creaky syllables were Tone 3 whose low part couldn't be tracked.
-  if(range < cfg.flat) tone = creak >= 0.4 ? 3 : 1;
+  // A short Tone 4 can fall only ~1–1.5 semitones in total, but it falls fast and all the way (e.g. 1.33 st
+  // in 0.17 s); a Tone 1 drifts at most ~4–5 st/s and not steadily from start to end. Checked on 168 logged
+  // syllables: this fixed 2 Tone 4s and touched no Tone 1.
+  const fastFall = maxPos <= 0.35 && minPos >= 0.65 && down >= 1.0 && down/(dur/1000) >= 5;
+  if(range < cfg.flat) tone = creak >= 0.4 ? 3 : (fastFall ? 4 : 1);
   else {
     // Does the voice come back up after its lowest point? If not, it is a fall.
     let rises = up >= Math.max(th3, 0.35*down) && !(maxPos < minPos && minPos > 0.85);
@@ -662,8 +666,10 @@ function classify(all){
         else if(lowFrac >= 0.55 && mn <= spkLow + 1.5) tone = 3;   // sits at the very bottom of the voice for a long time
       }
       else if(lowFrac >= 0.45 && minPos < 0.85) tone = 3;
-    } else if(down < 0.6 && minPos < 0.3){
-      tone = 2;   // rises from the start with no real dip: Tone 3 always drops first
+    } else if(down < 0.6 && minPos < 0.3 && creak < 0.4){
+      // rises from the start with no real dip: Tone 3 always drops first. Not when much of the syllable
+      // was creaky (no pitch): then its low part is simply missing and the Tone 3 score below decides.
+      tone = 2;
     } else {
       s3 = score3(feats);
       tone = s3 > 0.3 ? 3 : 2;
@@ -821,8 +827,11 @@ function hitCircle(cx,cy,r,R){
   const nx=Math.max(R.x,Math.min(cx,R.x+R.w)), ny=Math.max(R.y,Math.min(cy,R.y+R.h));
   return (cx-nx)**2+(cy-ny)**2 < r*r;
 }
+// The card to read now: the next obstacle the fish has not reached yet. As soon as the fish touches an
+// obstacle it is too late to change anything there, so the NEXT card becomes the one to read (players read
+// a card the moment it glows; before, such an answer was counted for the obstacle the fish was still in).
 function currentTarget(){
-  return game.obs.find(o=>!o.passed && o.x-game.dist+o.w > BX-BR);
+  return game.obs.find(o=>!o.passed && o.x-game.dist > BX+BR);
 }
 
 /* ---------- Tone → action ---------- */
@@ -858,11 +867,22 @@ function applyTone(tone, source, info){
     }
   }
 
+  // A card is read while the fish is still between the previous pillars: moving up/down (or dipping) now
+  // would hit them, so the move waits until the fish is out. The answer itself has already been counted.
+  if(tone!==1 && fishInside()){ b.queued={tone, tgt}; return; }
+  doMove(tone, tgt);
+}
+function doMove(tone, tgt){
+  const b=game.bird;
   if(tone===2){ if(b.lane>0) b.lane--; }
   else if(tone===4){ if(b.lane<LANES-1) b.lane++; }
   // With the right tone, the move holds until the fish has passed the obstacle: no timing needed
   else if(tone===1){ b.dashT=1.2; b.dashObj = (tgt && tgt.type==='glass') ? tgt : null; }
   else if(tone===3){ b.anim={amp: LANE_H*1.2, t:0, phase:'in', hold:(tgt && tgt.type==='rock')?tgt:null}; }
+}
+// Is the fish inside an obstacle right now (between its pillars, at its wall or under its rock)?
+function fishInside(){
+  return game.obs.some(o=>{ if(o.broken) return false; const sx=o.x-game.dist; return sx < BX+BR && sx+o.w > BX-BR; });
 }
 const IN_T=0.22, OUT_T=0.28, MIN_HOLD=0.45;
 function animOffset(a, dt){
@@ -886,6 +906,7 @@ function update(dt){
   g.t+=dt;
   if(b.dashT>0) b.dashT-=dt;
   if(b.dashObj){ if(b.dashObj.broken || b.dashObj.passed) b.dashObj=null; else b.dashT=Math.max(b.dashT,0.3); }
+  if(b.queued && !fishInside()){ const q=b.queued; b.queued=null; doMove(q.tone, q.tgt); }   // move answered while inside
   const tgtNow=currentTarget();
   if(tgtNow!==g.targetRef){ g.targetRef=tgtNow; if(tgtNow) replanFrom(tgtNow); }
   // The target card "lights up" once it is fully on screen: that is the moment to read it
