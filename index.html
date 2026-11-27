@@ -523,6 +523,9 @@ function logRec(heard, info, ignored, tgt){
   if(info){
     const c=info.contour||[], step=Math.max(1, c.length/24), c0=c[0]||0;   // ≤24 points, relative to the start
     e.dur=Math.round(info.dur); e.range=r2(info.range); e.s3=r2(info.s3);
+    // absolute pitch (semitones above 55 Hz) and the voice range learned so far, to check the range offline
+    e.st0=r2(c0); e.stMin=r2(Math.min(...c));
+    if(voiceHist.vals.length) e.spk={low:r2(pct(voiceHist.vals,0.1)), mid:r2(pct(voiceHist.vals,0.5)), n:voiceHist.n};
     e.contour=[]; for(let i=0;i<c.length;i+=step) e.contour.push(Math.round((c[Math.floor(i)]-c0)*10)/10);
     e.feats={}; for(const [k,v] of Object.entries(info.feats||{})) e.feats[k]=r2(v);
   }
@@ -641,14 +644,7 @@ function classify(all){
   const relStart = known ? start - spkMid : null;
   const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: known ? mn-spkLow : null, relDur, relStart};
   let tone, s3=null;
-  // Small pitch change: normally Tone 1. But if much of the syllable was voiced without a clear pitch
-  // (creaky voice at the low point), it is Tone 3: in recorded play no Tone 1 ever had any creak,
-  // while most heavily creaky syllables were Tone 3 whose low part couldn't be tracked.
-  // A short Tone 4 can fall only ~1–1.5 semitones in total, but it falls fast and all the way (e.g. 1.33 st
-  // in 0.17 s); a Tone 1 drifts at most ~4–5 st/s and not steadily from start to end. Checked on 168 logged
-  // syllables: this fixed 2 Tone 4s and touched no Tone 1.
-  const fastFall = maxPos <= 0.35 && minPos >= 0.65 && down >= 1.0 && down/(dur/1000) >= 5;
-  if(range < cfg.flat) tone = creak >= 0.4 ? 3 : (fastFall ? 4 : 1);
+  if(range < cfg.flat) tone=1;
   else {
     // Does the voice come back up after its lowest point? If not, it is a fall.
     let rises = up >= Math.max(th3, 0.35*down) && !(maxPos < minPos && minPos > 0.85);
@@ -666,10 +662,8 @@ function classify(all){
         else if(lowFrac >= 0.55 && mn <= spkLow + 1.5) tone = 3;   // sits at the very bottom of the voice for a long time
       }
       else if(lowFrac >= 0.45 && minPos < 0.85) tone = 3;
-    } else if(down < 0.6 && minPos < 0.3 && creak < 0.4){
-      // rises from the start with no real dip: Tone 3 always drops first. Not when much of the syllable
-      // was creaky (no pitch): then its low part is simply missing and the Tone 3 score below decides.
-      tone = 2;
+    } else if(down < 0.6 && minPos < 0.3){
+      tone = 2;   // rises from the start with no real dip: Tone 3 always drops first
     } else {
       s3 = score3(feats);
       tone = s3 > 0.3 ? 3 : 2;
