@@ -50,6 +50,8 @@
   .legend .ex{color:var(--muted);font-size:13px}
   .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
   .keys button{padding:8px 0;font-size:14px}
+  label.chk{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:10px 0 4px;line-height:1.4;cursor:pointer}
+  label.chk input{margin-top:2px}
   label.sl{display:block;font-size:13px;margin:8px 0 2px;color:var(--muted)}
   label.sl output{float:right;color:var(--ink);margin-left:8px}
   input[type=range]{width:100%}
@@ -158,6 +160,7 @@
 
     <details class="card" id="settingsCard">
       <summary data-i18n="settings"></summary>
+      <label class="chk"><input type="checkbox" id="s_iso" checked> <span data-i18n="sIso"></span></label>
       <label class="sl"><span data-i18n="sSens"></span><output id="o_sens"></output></label>
       <input type="range" id="s_sens" min="1" max="10" step="1">
       <label class="sl"><span data-i18n="sFlat"></span><output id="o_flat"></output></label>
@@ -167,6 +170,8 @@
       <label class="sl"><span data-i18n="sEnd"></span><output id="o_end"></output></label>
       <input type="range" id="s_end" min="80" max="400" step="10">
       <p class="tip" data-i18n="tip"></p>
+      <button class="ghost" id="logBtn" style="width:100%;margin-top:10px;font-size:14px" data-i18n="logBtn"></button>
+      <p class="tip" id="logMsg" data-i18n="logTip"></p>
     </details>
   </aside>
 </main>
@@ -192,8 +197,18 @@ const I18N = {
     sFlat:'평탄 기준 (반음 · 높을수록 1성으로 판정되기 쉬움)',
     sMin:'이보다 짧은 소리는 무시 (ms · 잡음 방지)',
     sEnd:'음절이 끝났다고 보는 멈춤 길이 (ms)',
-    tip:'소리 크기가 아니라 음높이의 모양으로 판별해요. 1성은 높고 평평하게, 2성은 올라가게, 3성은 내려갔다 올라오게, 4성은 높은 데서 뚝 떨어지게 말하세요. 주변 소음에 맞춰 기준이 자동으로 조정돼요. 음량 막대의 검은 선을 넘으면 목소리로 인식해요.',
+    tip:'소리 크기가 아니라 음높이의 모양으로 판별해요. 1성은 높고 평평하게, 2성은 올라가게, 3성은 내려갔다 올라오게, 4성은 높은 데서 뚝 떨어지게 말하세요. 주변 소음에 맞춰 기준이 자동으로 조정돼요. 음량 막대의 검은 선을 넘으면 목소리로 인식해요. “게임용 발음만 인식”을 켜 두면 앞뒤로 잠깐 멈춘 한 음절만, 그리고 반짝이는 카드가 있을 때만 반응해서 옆 사람과의 대화나 잡음은 무시해요.',
     toneName:n=>`${n}성`,
+    sIso:'게임용 발음만 인식 (대화·잡음 무시)',
+    logBtn:'📋 인식 기록 복사',
+    logTip:'바르게 말했는데 틀리게 인식되면, 이 버튼으로 기록을 복사해 보내 주세요. 음높이 숫자만 담기고 녹음은 저장되지 않아요.',
+    logEmpty:'아직 기록이 없어요. 마이크로 몇 판 플레이한 뒤 눌러 주세요.',
+    logCopied:(n,m)=>`${n}개 음절 기록을 복사했어요 (그중 다르게 인식된 것 ${m}개). 붙여넣어 보내 주세요.`,
+    logManual:'자동 복사가 막혀 있어요. 아래 글을 전부 선택해 복사해 주세요.',
+    ignored:{talk:'이어서 말한 소리라 무시했어요. 한 글자만 말하고 앞뒤로 잠깐 멈추세요.',
+             noise:'목소리가 아닌 소리(잡음)라 무시했어요.',
+             long:'너무 길게 이어진 소리라 무시했어요.',
+             idle:'지금은 읽을 카드가 없어서 움직이지 않았어요.'},
     action:{1:'앞으로 돌진 (산호벽 깨기)',2:'한 칸 위로',3:'내려갔다 올라오기 (암초 밑 통과)',4:'한 칸 아래로'},
     moveShort:{1:'돌진해서 산호벽 깨기',2:'위로 한 칸',3:'암초 밑으로 통과',4:'아래로 한 칸'},
     info:(d,r)=>`길이 ${d}ms · 음높이 변화 ${r} 반음`,
@@ -249,8 +264,18 @@ const I18N = {
     sFlat:'Level-tone threshold (semitones · higher = more Tone 1)',
     sMin:'Ignore sounds shorter than (ms · filters noise)',
     sEnd:'Pause that ends a syllable (ms)',
-    tip:'Detection uses the shape of your pitch, not loudness. Tone 1: high and level. Tone 2: rising. Tone 3: dips low, then rises. Tone 4: falls sharply from high. The threshold adapts to background noise automatically; anything past the black line on the level bar counts as voice.',
+    tip:'Detection uses the shape of your pitch, not loudness. Tone 1: high and level. Tone 2: rising. Tone 3: dips low, then rises. Tone 4: falls sharply from high. The threshold adapts to background noise automatically; anything past the black line on the level bar counts as voice. With "Only react to game reading" on, the game only responds to a single syllable with a short pause before and after, and only while a card is glowing, so chatting with people nearby and background noise are ignored.',
     toneName:n=>`Tone ${n}`,
+    sIso:'Only react to game reading (ignore talking & noise)',
+    logBtn:'📋 Copy recognition log',
+    logTip:'If a correctly spoken tone is recognized wrong, copy the log with this button and send it in. It holds pitch numbers only; no audio is recorded.',
+    logEmpty:'No log yet. Play a few rounds with the microphone first.',
+    logCopied:(n,m)=>`Copied the log of ${n} syllables (${m} recognized differently from the card). Paste it to send.`,
+    logManual:'Automatic copy is blocked. Select all the text below and copy it.',
+    ignored:{talk:'Ignored: sounded like connected speech. Say one syllable, with a short pause before and after.',
+             noise:'Ignored: not a voice (noise).',
+             long:'Ignored: the sound went on too long.',
+             idle:'No card to read right now, so the fish didn\'t move.'},
     action:{1:'Dash forward (smash coral walls)',2:'Swim up one lane',3:'Dip down and back (pass under reef rocks)',4:'Swim down one lane'},
     moveShort:{1:'dash and smash coral walls',2:'swim up one lane',3:'dip under reef rocks',4:'swim down one lane'},
     info:(d,r)=>`${d} ms · pitch change ${r} semitones`,
@@ -325,7 +350,7 @@ const CF = '"PingFang SC","Microsoft YaHei","Noto Sans SC","Apple SD Gothic Neo"
 /* ============================================================
    Recognition settings
    ============================================================ */
-const cfg = { sens:7, flat:1.6, minMs:100, endMs:160 };
+const cfg = { sens:5, flat:1.6, minMs:100, endMs:160, iso:true };
 // Adaptive voice gate: track the background-noise level and treat anything clearly above it as voice.
 // Sensitivity 1 → voice must be 5× the noise; 10 → 1.6×.
 let noiseFloor = 0.002, gate = 0.006;
@@ -340,6 +365,8 @@ bindSlider('sens','sens',v=>v+'');
 bindSlider('flat','flat',v=>v.toFixed(1));
 bindSlider('min','minMs',v=>v+'');
 bindSlider('end','endMs',v=>v+'');
+document.getElementById('s_iso').onchange=e=>{ cfg.iso=e.target.checked; pendingSyl=null; };
+document.getElementById('logBtn').onclick=()=>copyRecLog();
 
 /* ============================================================
    Side panel: legend & buttons
@@ -463,12 +490,99 @@ function processFrame(buf, sr, now){
     seg.pts.push({t:now, st:null, rms}); seg.last=now;
   }
   if(seg.active && (now-seg.last>cfg.endMs || now-seg.lastPitch>450 || now-seg.start>1500)) finishSeg();
+  // A game syllable is only acted on once the pause after it is long enough. If another syllable has
+  // already started close behind it, wait: that one decides whether this was conversation (see finishSeg).
+  if(pendingSyl && now>=pendingSyl.at && !(seg.active && seg.start-pendingSyl.end < ISO_GAP)){
+    const r=pendingSyl.r; pendingSyl=null; applyTone(r.tone,'voice',r);
+  }
   while(recent.length && now-recent[0].t>4000) recent.shift();
+}
+
+/* ---------- Only react to syllables said FOR the game ----------
+   Reading a card = one syllable, said on its own, with a pause before and after, in a clear steady voice.
+   Conversation = syllables strung together with short gaps; noise = no steady pitch. Both are ignored. */
+const ISO_GAP=250;         // ms without voice pitch needed before and after a game syllable
+const MAX_SYL_MS=1000;     // a single read syllable is shorter than this; longer runs are speech or humming
+let prevSylEnd=-1e9;       // end of the last real syllable (any, accepted or not)
+let pendingSyl=null;       // a syllable waiting for its trailing pause: {r, end, at}
+// Noise check: real voice has pitch in most frames and that pitch moves smoothly.
+// Returns a reason string when the sound is not a voice, or null when it looks like one.
+function noiseReason(all){
+  const p=all.filter(x=>x.st!=null);
+  if(p.length<4) return null;                                  // too short: classify() ignores it anyway
+  const pitchedFrac=p.length/all.length;
+  let pairs=0, jumpy=0;
+  for(let i=1;i<all.length;i++){
+    if(all[i].st==null || all[i-1].st==null) continue;
+    const d=Math.abs(all[i].st-all[i-1].st), d2=Math.min(d, Math.abs(d-12));   // forgive octave slips
+    pairs++; if(d2>2) jumpy++;
+  }
+  if(pitchedFrac < 0.4) return 'noise';
+  if(pairs>=3 && jumpy/pairs > 0.3) return 'noise';
+  return null;
+}
+// Two syllables said close together (normal talking) can merge into one segment. Spot the join:
+// a short silence inside the segment, or a deep dip in loudness with loud voice on both sides.
+function multiSyllable(all){
+  const n=all.length; if(n<6) return false;
+  for(let i=1;i<n;i++){
+    if(all[i].t-all[i-1].t >= 100){
+      const a=all.slice(0,i).filter(p=>p.st!=null).length, b=all.slice(i).filter(p=>p.st!=null).length;
+      if(a>=4 && b>=4) return true;
+    }
+  }
+  const r=all.map(p=>p.rms), s=r.map((_,i)=>(r[Math.max(0,i-1)]+r[i]+r[Math.min(n-1,i+1)])/3), peak=Math.max(...s);
+  for(let i=2;i<n-2;i++){
+    if(s[i] >= 0.25*peak) continue;
+    if(Math.max(...s.slice(0,i)) >= 0.6*peak && Math.max(...s.slice(i+1)) >= 0.6*peak) return true;
+  }
+  return false;
+}
+function ignoreVoice(reason, r){
+  lastDet={tone:r?r.tone:null, source:'voice', info:r||null, ignored:reason}; renderDet();
+  if(state==='play' && reason!=='idle') logRec(r?r.tone:null, r, reason, currentTarget());
+}
+
+/* ---------- Recognition log ----------
+   Keeps the pitch shape of the last syllables heard during play (numbers only, never audio), with the
+   tone the card wanted. "Copy recognition log" puts it on the clipboard so it can be sent in to tune
+   the recognizer on real voices. */
+const recLog=[];
+const r2 = x => x==null ? null : Math.round(x*100)/100;
+function logRec(heard, info, ignored, tgt){
+  const e={ t:new Date().toISOString().slice(11,19), want:tgt?tgt.tone:null, word:tgt?tgt.word[0]:null, heard, ignored };
+  if(info){
+    const c=info.contour||[], step=Math.max(1, c.length/24), c0=c[0]||0;   // ≤24 points, relative to the start
+    e.dur=Math.round(info.dur); e.range=r2(info.range); e.s3=r2(info.s3);
+    e.contour=[]; for(let i=0;i<c.length;i+=step) e.contour.push(Math.round((c[Math.floor(i)]-c0)*10)/10);
+    e.feats={}; for(const [k,v] of Object.entries(info.feats||{})) e.feats[k]=r2(v);
+  }
+  recLog.push(e); if(recLog.length>60) recLog.shift();
+}
+async function copyRecLog(){
+  const msg=document.getElementById('logMsg');
+  if(!recLog.length){ msg.textContent=L().logEmpty; return; }
+  const misses=recLog.filter(e=>e.want && e.heard!==e.want).length;
+  const text=JSON.stringify({app:document.title, ua:navigator.userAgent.slice(0,80), cfg, misses, log:recLog});
+  try{ await navigator.clipboard.writeText(text); msg.textContent=L().logCopied(recLog.length, misses); return; }catch(e){}
+  // clipboard blocked: show the text so it can be copied by hand
+  let ta=document.getElementById('logText');
+  if(!ta){ msg.insertAdjacentHTML('afterend','<textarea id="logText" rows="4" readonly style="width:100%;font-size:11px;margin-top:6px"></textarea>'); ta=document.getElementById('logText'); }
+  ta.value=text; ta.focus(); ta.select(); msg.textContent=L().logManual;
 }
 function finishSeg(){
   seg.active=false;
+  if(cfg.iso){ const nr=noiseReason(seg.pts); if(nr){ ignoreVoice(nr); return; } }
   const r=classify(seg.pts);
-  if(r){ lastContour=r; applyTone(r.tone,'voice',r); }
+  if(!r) return;
+  lastContour=r;
+  if(!cfg.iso){ applyTone(r.tone,'voice',r); return; }
+  const gapBefore=seg.start-prevSylEnd;
+  prevSylEnd=seg.lastPitch;
+  if(pendingSyl && gapBefore<ISO_GAP){ pendingSyl=null; ignoreVoice('talk', r); return; }  // two in a row: talking
+  if(gapBefore<ISO_GAP || multiSyllable(seg.pts)){ pendingSyl=null; ignoreVoice('talk', r); return; }
+  if(r.dur>MAX_SYL_MS){ ignoreVoice('long', r); return; }
+  pendingSyl={r, end:seg.lastPitch, at:seg.lastPitch+ISO_GAP};
 }
 
 /* ---------- Tone classification from pitch-contour shape ---------- */
@@ -555,7 +669,14 @@ function classify(all){
   const relStart = known ? start - spkMid : null;
   const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: known ? mn-spkLow : null, relDur, relStart};
   let tone, s3=null;
-  if(range < cfg.flat) tone=1;
+  // Judge "level" on the steady middle of the syllable. At the edges the pitch is pushed around by the
+  // consonant and drops as the voice fades, so a perfectly good Tone 1 can span ~2 semitones overall
+  // and used to be heard as a small Tone 4 fall. Tone 4 falls much more than that.
+  const c0=Math.floor(wv.length*0.15), core=wv.slice(c0, wv.length-c0);
+  const coreRange = core.length>=3 ? Math.max(...core)-Math.min(...core) : range;
+  // ...but only for a syllable in the upper part of the voice: a low, flat-ish one is a Tone 3
+  const highEnough = known ? (relStart > -1 && mn - spkLow > 2) : (creak < 0.15 && lowFrac < 0.5);
+  if(range < cfg.flat || (coreRange < cfg.flat && down < 3 && up < 3 && highEnough)) tone=1;
   else {
     // Does the voice come back up after its lowest point? If not, it is a fall.
     let rises = up >= Math.max(th3, 0.35*down) && !(maxPos < minPos && minPos > 0.85);
@@ -729,17 +850,24 @@ const detTone=document.getElementById('detTone'), detInfo=document.getElementByI
 let lastDet=null;
 function renderDet(){
   if(!lastDet){ detTone.textContent='—'; detTone.style.color=''; detInfo.textContent=L().detIdle; return; }
-  const {tone, source, info} = lastDet, T=TONES[tone];
+  const {tone, source, info, ignored} = lastDet, T=TONES[tone];
+  if(ignored){   // heard, but not treated as a game syllable: say why, in grey
+    detTone.textContent = tone ? toneName(tone) : '—'; detTone.style.color='#b9b2a3';
+    detInfo.textContent = L().ignored[ignored]; return;
+  }
   detTone.textContent=toneName(tone); detTone.style.color=T.color;
   const extra = info ? L().info(Math.round(info.dur), info.range.toFixed(1))
               : (source==='key' ? L().srcKey : L().srcBtn);
   detInfo.innerHTML = `${T.icon} ${L().action[tone]}<br>${extra}`;
 }
 function applyTone(tone, source, info){
-  lastDet={tone, source, info}; renderDet();
-  if(state!=='play') return;
-
+  if(state!=='play'){ lastDet={tone, source, info}; renderDet(); return; }
   const T=TONES[tone], b=game.bird, tgt=currentTarget();
+  // Voice only counts while a glowing card is waiting to be read. Before it lights up and after it has
+  // been read correctly, talking (or noise) must not move the fish. Keys and buttons always work.
+  if(source==='voice' && cfg.iso && !(tgt && tgt.litRem!=null && !tgt.answered)){ ignoreVoice('idle', info); return; }
+  lastDet={tone, source, info}; renderDet();
+  if(source==='voice') logRec(tone, info, null, tgt);
   game.stats[tone][0]++;
   if(tgt && !tgt.answered){
     const wd=`${tgt.word[0]} ${tgt.word[1]} = ${meaning(tgt.word)}`;
