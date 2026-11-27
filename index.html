@@ -163,6 +163,7 @@
     <details class="card" id="settingsCard">
       <summary data-i18n="settings"></summary>
       <label class="chk"><input type="checkbox" id="s_iso" checked> <span data-i18n="sIso"></span></label>
+      <label class="chk"><input type="checkbox" id="s_ns" checked> <span data-i18n="sNs"></span></label>
       <label class="sl"><span data-i18n="sSens"></span><output id="o_sens"></output></label>
       <input type="range" id="s_sens" min="1" max="10" step="1">
       <label class="sl"><span data-i18n="sFlat"></span><output id="o_flat"></output></label>
@@ -202,6 +203,7 @@ const I18N = {
     tip:'소리 크기가 아니라 음높이의 모양으로 판별해요. 1성은 높고 평평하게, 2성은 올라가게, 3성은 내려갔다 올라오게, 4성은 높은 데서 뚝 떨어지게 말하세요. 주변 소음에 맞춰 기준이 자동으로 조정돼요. 음량 막대의 검은 선을 넘으면 목소리로 인식해요. “게임용 발음만 인식”을 켜 두면 앞뒤로 잠깐 멈춘 한 음절만, 그리고 반짝이는 카드가 있을 때만 반응해서 옆 사람과의 대화나 잡음은 무시해요.',
     toneName:n=>`${n}성`,
     sIso:'게임용 발음만 인식 (대화·잡음 무시)',
+    sNs:'브라우저 잡음 제거·자동 음량 (2·4성이 잘 안 잡히면 꺼 보세요)',
     recBtn:'🎙 최근 30초 녹음 저장 (.wav)',
     recTip:'인식이 이상할 때 바로 누르면, 방금 말한 소리가 파일로 저장돼요. 이 컴퓨터에만 저장되고, 누를 때만 저장돼요.',
     recEmpty:'저장할 소리가 아직 없어요. 마이크를 켜고 말한 뒤 눌러 주세요.',
@@ -273,6 +275,7 @@ const I18N = {
     tip:'Detection uses the shape of your pitch, not loudness. Tone 1: high and level. Tone 2: rising. Tone 3: dips low, then rises. Tone 4: falls sharply from high. The threshold adapts to background noise automatically; anything past the black line on the level bar counts as voice. With "Only react to game reading" on, the game only responds to a single syllable with a short pause before and after, and only while a card is glowing, so chatting with people nearby and background noise are ignored.',
     toneName:n=>`Tone ${n}`,
     sIso:'Only react to game reading (ignore talking & noise)',
+    sNs:'Browser noise suppression & auto gain (try turning off if Tones 2/4 are missed)',
     recBtn:'🎙 Save last 30 s of audio (.wav)',
     recTip:'When recognition seems off, press this right away to save what you just said as a file. It is saved only on this computer, and only when you press.',
     recEmpty:'Nothing to save yet. Turn on the microphone and speak first.',
@@ -362,7 +365,7 @@ const CF = '"PingFang SC","Microsoft YaHei","Noto Sans SC","Apple SD Gothic Neo"
    ============================================================ */
 // sens 7 / minMs 80: a Tone 4 is short and fades fast, so a lower sensitivity or a longer minimum
 // throws real Tone 4s away. Talking and noise are kept out by the game-reading filter instead.
-const cfg = { sens:7, flat:1.6, minMs:80, endMs:160, iso:true };
+const cfg = { sens:7, flat:1.6, minMs:80, endMs:160, iso:true, ns:true };
 // Adaptive voice gate: track the background-noise level and treat anything clearly above it as voice.
 // Sensitivity 1 → voice must be 5× the noise; 10 → 1.6×.
 let noiseFloor = 0.002, gate = 0.006;
@@ -380,6 +383,15 @@ bindSlider('end','endMs',v=>v+'');
 document.getElementById('s_iso').onchange=e=>{ cfg.iso=e.target.checked; pendingSyl=null; };
 document.getElementById('logBtn').onclick=()=>copyRecLog();
 document.getElementById('recBtn').onclick=()=>saveRecording();
+// Browser noise suppression + auto gain on/off. If the microphone is already on, reopen it with the new setting.
+document.getElementById('s_ns').onchange=async e=>{
+  cfg.ns=e.target.checked;
+  if(!micOn) return;
+  try{ micStream && micStream.getTracks().forEach(t=>t.stop()); }catch(_){}
+  try{ await audioCtx.close(); }catch(_){}
+  micOn=false; seg.active=false; pendingSyl=null; noiseFloor=0.002;
+  await micBtn.onclick();
+};
 
 /* ============================================================
    Side panel: legend & buttons
@@ -447,12 +459,15 @@ function renderMic(){
   micBtn.disabled = micOn;
   micStatus.textContent = micErrMsg ? L().micErr(micErrMsg) : (micOn ? L().micReadyHint : L().micHint);
 }
+let micStream=null;
 micBtn.onclick = async ()=>{
   if(micOn) return;
   try{
-    // Auto gain lifts a quiet / distant voice; noise suppression removes steady fan or traffic hum.
-    // Neither changes pitch, which is all the tone detector looks at.
-    const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:true,autoGainControl:true}});
+    // Auto gain lifts a quiet / distant voice; the browser's noise suppression removes steady hum.
+    // Noise suppression can also flatten the quiet start of Tone 2 and the fading end of Tone 4 (a
+    // recording showed only the loudest ~0.25 s of each syllable still had a pitch), so it can be switched off.
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:cfg.ns,autoGainControl:cfg.ns}});
+    micStream=stream;
     audioCtx = new (window.AudioContext||window.webkitAudioContext)();
     const src = audioCtx.createMediaStreamSource(stream);
     // Keep only the voice-pitch band: cut rumble below 70 Hz and hiss above 1.5 kHz
@@ -727,7 +742,14 @@ function classify(all){
   const ct=Math.max(1, Math.floor(core.length/3));
   const coreNet = core.length>=3 ? mean(core.slice(-ct)) - mean(core.slice(0,ct)) : end-start;
   const shortSyl = known ? relDur < 0.7 : dur < 230;
-  if(range < cfg.flat || (coreRange < cfg.flat && Math.abs(coreNet) < 1.1 && !shortSyl && down < 3 && up < 3 && highEnough)) tone=1;
+  // Speed of the pitch change. With background noise only the loudest middle of a syllable may keep a
+  // detectable pitch, so the total change looks small (a recorded Tone 4 fell just 1.7 semitones in 0.13 s).
+  // But a steady fall or rise faster than ~8 semitones/second is never Tone 1 (it drifts 3–4 st/s at most);
+  // the fall/rise branches below then decide between 2, 3 and 4.
+  const secs=Math.max(0.05,(wv.length-1)*0.016), net=end-start, rate=net/secs;
+  const steadyFall = -net >= 1.0 && -rate >= 8 && maxPos <= 0.35 && minPos >= 0.65;
+  const steadyRise =  net >= 1.0 &&  rate >= 8 && minPos <= 0.35 && maxPos >= 0.65;
+  if(!(steadyFall || steadyRise) && (range < cfg.flat || (coreRange < cfg.flat && Math.abs(coreNet) < 1.1 && !shortSyl && down < 3 && up < 3 && highEnough))) tone=1;
   else {
     // Does the voice come back up after its lowest point? If not, it is a fall.
     let rises = up >= Math.max(th3, 0.35*down) && !(maxPos < minPos && minPos > 0.85);
@@ -741,8 +763,10 @@ function classify(all){
       // A fall that starts in the lower half of the voice and stays at the bottom is a Tone 3 said
       // without the final rise (very common); Tone 4 starts from the top of the voice.
       if(known){
-        if(relStart <= -1 && (mn <= spkLow + 2 || creak > 0.1 || lowFrac >= 0.45)) tone = 3;
-        else if(lowFrac >= 0.55 && mn <= spkLow + 1.5) tone = 3;   // sits at the very bottom of the voice for a long time
+        if(relStart <= -1 && (mn <= spkLow + 2 || creak > 0.1 || lowFrac >= 0.45) && !(steadyFall && relStart > -2.5)) tone = 3;
+        // sits at the very bottom of the voice for a long time (a Tone 4 instead keeps falling to its very end;
+        // with a narrow voice range its end is also near the bottom)
+        else if(lowFrac >= 0.55 && mn <= spkLow + 1.5 && !(steadyFall && minPos >= 0.85)) tone = 3;
       }
       else if(lowFrac >= 0.45 && minPos < 0.85) tone = 3;
     } else if(down < 0.6 && minPos < 0.3){
