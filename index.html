@@ -163,8 +163,6 @@
 
     <details class="card" id="settingsCard">
       <summary data-i18n="settings"></summary>
-      <label class="sl"><span data-i18n="sPitch"></span></label>
-      <select id="s_pitch" style="width:100%"><option value="pyin" data-i18n="pitchPyin"></option><option value="yin" data-i18n="pitchYin"></option></select>
       <label class="chk"><input type="checkbox" id="s_iso"> <span data-i18n="sIso"></span></label>
       <label class="chk"><input type="checkbox" id="s_ns" checked> <span data-i18n="sNs"></span></label>
       <label class="sl"><span data-i18n="sSens"></span><output id="o_sens"></output></label>
@@ -205,8 +203,6 @@ const I18N = {
     sEnd:'음절이 끝났다고 보는 멈춤 길이 (ms)',
     tip:'소리 크기가 아니라 음높이의 모양으로 판별해요. 1성은 높고 평평하게, 2성은 올라가게, 3성은 내려갔다 올라오게, 4성은 높은 데서 뚝 떨어지게 말하세요. 주변 소음에 맞춰 기준이 자동으로 조정돼요. 음량 막대의 검은 선을 넘으면 목소리로 인식해요. “게임용 발음만 인식”을 켜 두면 앞뒤로 잠깐 멈춘 한 음절만, 그리고 반짝이는 카드가 있을 때만 반응해서 옆 사람과의 대화나 잡음은 무시해요.',
     toneName:n=>`${n}성`,
-    sPitch:'음높이 검출 방식',
-    pitchPyin:'pYIN (새 방식 · 끊김에 강함)', pitchYin:'YIN (기존 방식)',
     menuMicHint:'먼저 마이크를 켜 주세요. 마이크 허용 창이 뜨면 「허용」을 눌러야 게임이 목소리를 들을 수 있어요.',
     sIso:'게임용 발음만 인식 (대화·잡음 무시)',
     sNs:'브라우저 잡음 제거·자동 음량 (2·4성이 잘 안 잡히면 꺼 보세요)',
@@ -276,8 +272,6 @@ const I18N = {
     sEnd:'Pause that ends a syllable (ms)',
     tip:'Detection uses the shape of your pitch, not loudness. Tone 1: high and level. Tone 2: rising. Tone 3: dips low, then rises. Tone 4: falls sharply from high. The threshold adapts to background noise automatically; anything past the black line on the level bar counts as voice. With "Only react to game reading" on, the game only responds to a single syllable with a short pause before and after, and only while a card is glowing, so chatting with people nearby and background noise are ignored.',
     toneName:n=>`Tone ${n}`,
-    sPitch:'Pitch detection',
-    pitchPyin:'pYIN (new · handles breaks better)', pitchYin:'YIN (original)',
     menuMicHint:'Turn on the microphone first. When the permission prompt appears, tap "Allow" so the game can hear you.',
     sIso:'Only react to game reading (ignore talking & noise)',
     sNs:'Browser noise suppression & auto gain (try turning off if Tones 2/4 are missed)',
@@ -366,8 +360,7 @@ const CF = '"PingFang SC","Microsoft YaHei","Noto Sans SC","Apple SD Gothic Neo"
    ============================================================ */
 // Same values as the Nov 23 17:30 version, whose recognition worked best on real play.
 // iso (only react to game reading) is an option, off by default so recognition behaves exactly like that version.
-// pitch: 'pyin' (probabilistic YIN with smoothing) or 'yin' (the original detector) — switchable in settings
-const cfg = { sens:7, flat:1.6, minMs:100, endMs:160, iso:false, ns:true, pitch:'pyin' };
+const cfg = { sens:7, flat:1.6, minMs:100, endMs:160, iso:false, ns:true };
 // Adaptive voice gate: track the background-noise level and treat anything clearly above it as voice.
 // Sensitivity 1 → voice must be 5× the noise; 10 → 1.6×.
 let noiseFloor = 0.002, gate = 0.006;
@@ -384,11 +377,6 @@ bindSlider('min','minMs',v=>v+'');
 bindSlider('end','endMs',v=>v+'');
 document.getElementById('s_iso').onchange=e=>{ cfg.iso=e.target.checked; pendingSyl=null; };
 document.getElementById('logBtn').onclick=()=>copyRecLog();
-// Pitch detection method (remembered on this device)
-const pitchSel=document.getElementById('s_pitch');
-try{ const p=localStorage.getItem('toneFishPitch'); if(p==='yin'||p==='pyin') cfg.pitch=p; }catch(e){}
-pitchSel.value=cfg.pitch;
-pitchSel.onchange=()=>{ cfg.pitch=pitchSel.value; seg.active=false; try{ localStorage.setItem('toneFishPitch', cfg.pitch); }catch(e){} };
 // Browser noise suppression + auto gain on/off. If the microphone is already on, reopen it with the new setting.
 document.getElementById('s_ns').onchange=async e=>{
   cfg.ns=e.target.checked;
@@ -459,104 +447,6 @@ function yin(buf, sr){
   return sr/bt;
 }
 
-/* ---------- pYIN (probabilistic YIN, Mauch & Dixon 2014) ----------
-   Plain YIN decides each frame alone with one fixed threshold: a frame whose waveform is a little irregular
-   (creaky low Tone 3, a noisy room) is thrown away, and the pitch track breaks up into a few dots.
-   pYIN instead (1) tries many thresholds, weighted by a Beta prior, and keeps every pitch they point to as a
-   candidate with a probability, then (2) when the syllable ends, picks the most likely smooth path through
-   those candidates with a hidden Markov model (Viterbi). Weak frames that continue the pitch of their
-   neighbours are kept; isolated octave jumps are dropped.
-   Selected in the settings ("pitch detection"); the original YIN above is untouched and can be chosen there. */
-const PYIN_TH = (()=>{                       // Beta(2, 34/3) prior over thresholds 0.01 … 1.00 (mean 0.15)
-  const a=2, b=34/3, out=[]; let sum=0;
-  for(let i=1;i<=100;i++){ const x=i/100-0.005, w=Math.pow(x,a-1)*Math.pow(1-x,b-1); out.push({th:i/100, w}); sum+=w; }
-  out.forEach(o=>o.w/=sum); return out;
-})();
-const yinD2 = new Float32Array(1200);
-// Pitch candidates of one frame: [{st, p}] (st = semitones above 55 Hz) and V = total probability of voicing
-function pyinCands(buf, sr){
-  const minF=70, maxF=550;
-  const maxTau=Math.min(Math.floor(sr/minF), yinD2.length-1), minTau=Math.floor(sr/maxF);
-  const N=buf.length-maxTau;
-  if(N<200) return null;
-  for(let tau=1; tau<=maxTau; tau++){
-    let s=0;
-    for(let i=0;i<N;i++){ const x=buf[i]-buf[i+tau]; s+=x*x; }
-    yinD2[tau]=s;
-  }
-  yinD2[0]=1; let run=0;
-  for(let tau=1; tau<=maxTau; tau++){ run+=yinD2[tau]; yinD2[tau]=run? yinD2[tau]*tau/run : 1; }
-  // local minima ("dips") in order of increasing period
-  const dips=[];
-  for(let t=minTau+1; t<maxTau; t++) if(yinD2[t]<yinD2[t-1] && yinD2[t]<=yinD2[t+1]) dips.push(t);
-  if(!dips.length) return {cands:[], V:0};
-  let gmin=dips[0]; for(const t of dips) if(yinD2[t]<yinD2[gmin]) gmin=t;
-  // for each threshold: the first dip below it gets that threshold's weight; if none, a small vote for the deepest dip
-  const mass=new Map(); let V=0;
-  for(const {th,w} of PYIN_TH){
-    let tau=-1; for(const t of dips){ if(yinD2[t]<th){ tau=t; break; } }
-    const add = tau<0 ? w*0.01 : w; if(tau<0) tau=gmin;
-    mass.set(tau,(mass.get(tau)||0)+add); V+=add;
-  }
-  const cands=[];
-  for(const [tau,p] of mass){
-    let bt=tau;
-    if(tau>1 && tau<maxTau){ const a=yinD2[tau-1], b=yinD2[tau], c=yinD2[tau+1], d=a+c-2*b; if(d) bt=tau+(a-c)/(2*d); }
-    const f=sr/bt; if(f>70 && f<550) cands.push({st:12*Math.log2(f/55), p});
-  }
-  return {cands, V};
-}
-// Viterbi over a finished syllable: rewrites each frame's .st with the most likely smooth pitch path (null = unvoiced)
-const PB_LO=4, PB_STEP=0.2, PB_N=181;       // pitch states every 0.2 semitone, 4–40 st above 55 Hz (70–550 Hz)
-const PB_JUMP=15;                           // at most ±3 semitones between 16 ms frames
-const P_STAY=0.97, P_SWITCH=0.03;           // voiced ⇄ unvoiced
-const YIN_TRUST=0.5;                        // how far the frame candidates are trusted (as in pYIN)
-function pyinSmooth(pts){
-  const T=pts.length; if(T<2) return;
-  const U=PB_N, NS=PB_N+1, L=x=>Math.log(x>1e-12?x:1e-12);
-  const tri=[]; let triSum=0; for(let d=-PB_JUMP; d<=PB_JUMP; d++){ const w=PB_JUMP+1-Math.abs(d); tri.push(w); triSum+=w; }
-  // As in pYIN, "unvoiced" is really one state per pitch; folded into a single state here, so its emission is
-  // the unvoiced probability spread over all pitches, and its transitions carry the same per-pitch weight.
-  const tC=tri[PB_JUMP]/triSum;
-  const lTri=tri.map(w=>L(P_STAY*w/triSum)), lSw=L(P_SWITCH*tC), lStay=L(P_STAY*tC), lOnset=L(P_SWITCH*tC);
-  const emit=p=>{ const e=new Float64Array(NS); let V=0;
-    if(p.cands) for(const c of p.cands){ const b=Math.round((c.st-PB_LO)/PB_STEP); if(b>=0 && b<PB_N){ e[b]+=YIN_TRUST*c.p; V+=c.p; } }
-    e[U]=Math.max(1e-9, (1-YIN_TRUST*V)/PB_N); for(let s=0;s<NS;s++) e[s]=L(e[s]); return e; };
-  let prev=emit(pts[0]); const back=[];
-  for(let t=1;t<T;t++){
-    const e=emit(pts[t]), cur=new Float64Array(NS), bk=new Int16Array(NS);
-    // into a voiced state: from a nearby voiced state, or a fresh onset from unvoiced
-    for(let j=0;j<PB_N;j++){
-      let best=prev[U]+lOnset, bi=U;
-      const lo=Math.max(0,j-PB_JUMP), hi=Math.min(PB_N-1,j+PB_JUMP);
-      for(let i=lo;i<=hi;i++){ const v=prev[i]+lTri[i-j+PB_JUMP]; if(v>best){ best=v; bi=i; } }
-      cur[j]=best+e[j]; bk[j]=bi;
-    }
-    // into unvoiced
-    let best=prev[U]+lStay, bi=U;
-    for(let i=0;i<PB_N;i++){ const v=prev[i]+lSw; if(v>best){ best=v; bi=i; } }
-    cur[U]=best+e[U]; bk[U]=bi;
-    back.push(bk); prev=cur;
-  }
-  let s=0; for(let i=1;i<NS;i++) if(prev[i]>prev[s]) s=i;
-  for(let t=T-1;t>=0;t--){
-    const p=pts[t];
-    if(s===U) p.st=null;
-    else { // use the frame's own candidate nearest to the chosen state (keeps sub-0.2-semitone detail)
-      const c0=PB_LO+s*PB_STEP; let st=c0, bd=PB_STEP;
-      if(p.cands) for(const c of p.cands){ const d=Math.abs(c.st-c0); if(d<=bd){ bd=d; st=c.st; } }
-      p.st=st;
-    }
-    if(t>0) s=back[t-1][s];
-  }
-  // Only fill gaps INSIDE the syllable. Before its first and after its last clearly pitched frame the sound
-  // is breath, the consonant or room noise; following weak candidates there would add a fake rise or fall.
-  const strong=p=>p.cands && p.cands.V>=0.05;
-  let a=0; while(a<T && !strong(pts[a])) a++;
-  let z=T-1; while(z>=0 && !strong(pts[z])) z--;
-  for(let t=0;t<T;t++) if(t<a || t>z) pts[t].st=null;
-}
-
 const micBtn=document.getElementById('micBtn'), micStatus=document.getElementById('micStatus');
 function renderMic(){
   micBtn.textContent = micOn ? L().micReady : L().micOn;
@@ -623,17 +513,10 @@ function processFrame(buf, sr, now){
   rms=Math.sqrt(rms/buf.length);
   level = level*0.7 + rms*0.3;
   updateGate();
-  let st=null, cands=null;
+  let st=null;
   if(rms>gate){
-    if(cfg.pitch==='pyin'){
-      // pYIN: keep all candidates for the smoothing step; the frame counts as pitched (for starting and
-      // keeping a syllable, and the live plot) when the voicing probability is at least what plain YIN accepts
-      const r=pyinCands(buf, sr);
-      if(r){ cands=r.cands; cands.V=r.V; if(r.V>=0.05 && cands.length){ let b=cands[0]; for(const c of cands) if(c.p>b.p) b=c; st=b.st; } }
-    } else {
-      const f=yin(buf, sr);
-      if(f && f>70 && f<550) st = 12*Math.log2(f/55);   // semitone scale
-    }
+    const f=yin(buf, sr);
+    if(f && f>70 && f<550) st = 12*Math.log2(f/55);   // semitone scale
   }
   // Learn the background level while nobody is speaking: drop quickly to quieter levels,
   // rise slowly (so a long syllable is never mistaken for noise). Steady non-voice sound
@@ -645,11 +528,11 @@ function processFrame(buf, sr, now){
   if(st!==null){
     recent.push({t:now, st});
     if(!seg.active){ seg.active=true; seg.pts=[]; seg.start=now; }
-    seg.pts.push({t:now, st, rms, cands}); seg.last=seg.lastPitch=now;
+    seg.pts.push({t:now, st, rms}); seg.last=seg.lastPitch=now;
   } else if(seg.active && rms>gate){
     // Voice is still sounding but has no clear pitch: usually the creaky low part of Tone 3.
     // Keep the syllable going instead of cutting it in two (the rising half alone would look like Tone 2).
-    seg.pts.push({t:now, st:null, rms, cands}); seg.last=now;
+    seg.pts.push({t:now, st:null, rms}); seg.last=now;
   }
   if(seg.active && (now-seg.last>cfg.endMs || now-seg.lastPitch>450 || now-seg.start>1500)) finishSeg();
   // A game syllable is only acted on once the pause after it is long enough. If another syllable has
@@ -717,7 +600,6 @@ async function copyRecLog(){
 }
 function finishSeg(){
   seg.active=false;
-  if(cfg.pitch==='pyin') pyinSmooth(seg.pts);   // most likely smooth pitch path through the frame candidates
   if(cfg.iso){ const nr=noiseReason(seg.pts); if(nr){ ignoreVoice(nr); return; } }
   const r=classify(seg.pts);
   if(!r) return;
@@ -749,10 +631,7 @@ function pct(arr,p){ const s=[...arr].sort((x,y)=>x-y); return s[Math.min(s.leng
 // Uses what listeners use: how late the turning point comes, how far the voice first drops,
 // how long it stays low (often creaky), whether that low point is the speaker's floor, and length.
 function score3(f){
-  // turning point: where the lowest point is, or, for a syllable that sits at the bottom first, where it
-  // leaves the bottom and starts to rise
-  const turn = f.lowHold >= 0.45 ? Math.max(f.minPos, f.lowEnd) : f.minPos;
-  let s = 3.0*(turn - 0.42)
+  let s = 3.0*(f.minPos - 0.42)
         + 0.6*(Math.min(f.down,4) - 1.0)
         + 2.5*(f.lowFrac - 0.3)
         + 3.0*f.creak;
@@ -816,16 +695,9 @@ function classify(all){
   const relDur = known ? dur/median(voiceHist.durs) : null;
   const lowBand = mn + Math.max(0.7, 0.15*up);
   const lowFrac = wv.filter(x=>x<=lowBand).length / wv.length;
-  // How long the voice sits flat at its bottom before rising, measured in the lowest quarter of the rise
-  // (at most 0.7 st, so a narrow voice range is judged on its own scale), and where that rise begins.
-  // A Tone 3 can start low, stay there, then jump up; a Tone 2 starts rising early.
-  const flatBand = mn + Math.min(0.7, Math.max(0.3, 0.25*up));
-  const lowHold = wv.filter(x=>x<=flatBand).length / wv.length;
-  let lastLow=0; for(let i=0;i<wv.length;i++) if(wv[i]<=flatBand) lastLow=i;
-  const lowEnd = lastLow/(wv.length-1);
   // how high the syllable starts within this speaker's range: Tone 4 starts at the top, Tones 2 and 3 lower
   const relStart = known ? start - spkMid : null;
-  const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: known ? mn-spkLow : null, relDur, relStart, lowHold, lowEnd};
+  const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: known ? mn-spkLow : null, relDur, relStart};
   let tone, s3=null;
   if(range < cfg.flat) tone=1;
   else {
@@ -845,10 +717,8 @@ function classify(all){
         else if(lowFrac >= 0.55 && mn <= spkLow + 1.5) tone = 3;   // sits at the very bottom of the voice for a long time
       }
       else if(lowFrac >= 0.45 && minPos < 0.85) tone = 3;
-    } else if(down < 0.6 && minPos < 0.3 && lowHold < 0.45){
-      tone = 2;   // rises from the start with no real dip and without sitting at the bottom first
-    } else if(lowHold >= 0.45 && lowEnd >= 0.35 && maxPos - lowEnd <= 0.35){
-      tone = 3;   // sits flat at the bottom for a good part of the syllable, then jumps up: Tone 3 said from a low start
+    } else if(down < 0.6 && minPos < 0.3){
+      tone = 2;   // rises from the start with no real dip: Tone 3 always drops first
     } else {
       s3 = score3(feats);
       tone = s3 > 0.3 ? 3 : 2;
