@@ -543,6 +543,18 @@ function finishSeg(){
   seg.active=false;
   const r=classify(seg.pts);
   if(r){ lastContour=r; applyTone(r.tone,'voice',r); }
+  else logNoReaction(seg.pts);
+}
+// Recognition log: a sound that was heard (voice for at least 150 ms) but gave too little pitch to pick a
+// tone, so the game did not react. Only the counts are kept, to see later how often this happens per tone.
+function logNoReaction(pts){
+  if(state!=='play' || !pts.length) return;
+  const dur=pts[pts.length-1].t-pts[0].t+16;
+  if(dur<150) return;
+  const tgt=currentTarget();
+  const e={ t:new Date().toISOString().slice(11,19), want:tgt?tgt.tone:null, word:tgt?tgt.word[0]:null, heard:null,
+            ignored:'nopitch', dur:Math.round(dur), frames:pts.length, pitched:pts.filter(p=>p.st!=null).length };
+  recLog.push(e); if(recLog.length>60) recLog.shift();
 }
 
 /* ---------- Tone classification from pitch-contour shape ---------- */
@@ -629,7 +641,10 @@ function classify(all){
   const relStart = known ? start - spkMid : null;
   const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: known ? mn-spkLow : null, relDur, relStart};
   let tone, s3=null;
-  if(range < cfg.flat) tone=1;
+  // Small pitch change: normally Tone 1. But if much of the syllable was voiced without a clear pitch
+  // (creaky voice at the low point), it is Tone 3: in recorded play no Tone 1 ever had any creak,
+  // while most heavily creaky syllables were Tone 3 whose low part couldn't be tracked.
+  if(range < cfg.flat) tone = creak >= 0.4 ? 3 : 1;
   else {
     // Does the voice come back up after its lowest point? If not, it is a fall.
     let rises = up >= Math.max(th3, 0.35*down) && !(maxPos < minPos && minPos > 0.85);
@@ -745,7 +760,7 @@ function fit(o, L){
   if(o.fromLane===L) return o.exitLane;
   let t=o.tone;
   if(t===2 && L===0) t=4;
-  if(t===4 && L===LANES-1) t=2;
+  if(t===4 && L===LANES-1) t = o.warm ? 1 : 2;   // warm-up cards stay Tone 1 / Tone 4
   if(t===3 && L===LANES-1) t=2;       // no room to dip from the bottom lane
   if(t!==o.tone || !o.word){ o.tone=t; o.word=pickWord(t); o.answered=false; }
   o.fromLane=L;
@@ -765,11 +780,17 @@ function pickWord(t){
   recent.push(w[0]); if(recent.length>8) recent.shift();
   return w;
 }
+// Warm-up: the first cards of a game are only Tone 1 and Tone 4 (the most reliably recognised), and missing
+// them costs no heart. Meanwhile the game learns the player's voice range and the room noise, which it
+// needs to tell Tone 2 from Tone 3; recognition errors were clearly more frequent in the first syllables.
+const WARMUP_CARDS=5;
 function spawn(){
   const o={ tone:pick([1,2,2,3,3,4,4]), x:game.nextX, passed:false, answered:false };
   if(tut){                                   // tutorial: a fixed, short sequence covering every tone
     if(tut.spawned>=TUT_SEQ.length){ game.nextX=Infinity; return; }
     o.tone=TUT_SEQ[tut.spawned]; o.tutIdx=tut.spawned++;
+  } else if((game.spawned=(game.spawned||0)+1) <= WARMUP_CARDS){
+    o.tone=pick([1,4]); o.warm=true;
   }
   game.expLane = fit(o, game.expLane);
   game.obs.push(o);
@@ -895,6 +916,9 @@ function update(dt){
         if(o.type==='glass' && b.dashT>0){ o.broken=true; burst(sx+o.w/2,b.y,'#ff8fa3',24); floatText(L().smash,'#1c7ed6'); }
         else if(g.inv<=0 && tut){            // tutorial: no hearts lost, just a tip
           g.inv=1.2; o.hit=true; burst(BX,b.y,'#e5484d',10); coach(L().tutMiss);
+        }
+        else if(g.inv<=0 && o.warm){         // warm-up card: no heart lost
+          g.inv=1.2; o.hit=true; burst(BX,b.y,'#e5484d',10);
         }
         else if(g.inv<=0){
           g.hearts--; g.inv=1.6; g.shake=0.35; g.streak=0; o.hit=true;
