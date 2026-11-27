@@ -523,6 +523,10 @@ function logRec(heard, info, ignored, tgt){
   if(info){
     const c=info.contour||[], step=Math.max(1, c.length/24), c0=c[0]||0;   // ≤24 points, relative to the start
     e.dur=Math.round(info.dur); e.range=r2(info.range); e.s3=r2(info.s3);
+    // absolute pitch (semitones above 55 Hz) and the voice range learned so far, so the range estimate can
+    // be checked offline on real recordings
+    e.st0=r2(c0); e.stMin=r2(Math.min(...c));
+    if(voiceHist.vals.length) e.spk={low:r2(pct(voiceHist.vals,0.1)), mid:r2(pct(voiceHist.vals,0.5)), n:voiceHist.n};
     e.contour=[]; for(let i=0;i<c.length;i+=step) e.contour.push(Math.round((c[Math.floor(i)]-c0)*10)/10);
     e.feats={}; for(const [k,v] of Object.entries(info.feats||{})) e.feats[k]=r2(v);
   }
@@ -562,11 +566,40 @@ const median = a => { const s=[...a].sort((x,y)=>x-y); return s[s.length>>1]; };
 const mean = a => a.reduce((x,y)=>x+y,0)/a.length;
 // The speaker's own pitch range and syllable length, learned from recent syllables.
 // Tone 3 sits at the bottom of a speaker's range; Tone 2 starts from the middle.
-const voiceHist={vals:[], durs:[], n:0};
+const voiceHist={vals:[], durs:[], n:0, syl:[]};
+// The speaker's range is learned from the syllables heard (voiceHist.vals: their pitch values).
+// Two things used to skew it (seen in the recognition logs):
+//  • warm-up cards are only Tone 1 / Tone 4, i.e. mostly the top of the voice, so the "bottom" came out too
+//    high and every Tone 2 looked like it sat at the bottom (like a Tone 3). Warm-up syllables are not learned.
+//  • a syllable tracked an octave too low/high (no octave check yet at the start) dragged the range by ~10
+//    semitones for 15+ syllables. Each syllable is kept separately; one whose middle pitch is far from the
+//    others is moved by an octave if that fits, otherwise left out.
+function warmupNow(){
+  if(state!=='play' || !game) return false;
+  const t=currentTarget(); return !!(t && t.warm);
+}
 function rememberVoice(v, dur){
-  voiceHist.vals.push(...v); if(voiceHist.vals.length>500) voiceHist.vals.splice(0, voiceHist.vals.length-500);
+  if(warmupNow()) return;
+  voiceHist.syl.push(v.slice()); if(voiceHist.syl.length>40) voiceHist.syl.shift();
   voiceHist.durs.push(dur); if(voiceHist.durs.length>12) voiceHist.durs.shift();
   voiceHist.n++;
+  rebuildVoiceRange();
+}
+function rebuildVoiceRange(){
+  const S=voiceHist.syl, meds=S.map(v=>median(v));
+  let keep=S;
+  if(S.length>=3){
+    const center=median(meds);
+    keep=[];
+    S.forEach((v,i)=>{
+      const d=meds[i]-center;
+      if(Math.abs(d)<=8) keep.push(v);                       // normal: within 8 semitones of the others
+      else if(Math.abs(d-12)<=4) keep.push(v.map(x=>x-12));  // an octave too high: move it down
+      else if(Math.abs(d+12)<=4) keep.push(v.map(x=>x+12));  // an octave too low: move it up
+    });                                                      // anything else: leave it out
+  }
+  const vals=[].concat(...keep);
+  voiceHist.vals = vals.length>500 ? vals.slice(vals.length-500) : vals;
 }
 function pct(arr,p){ const s=[...arr].sort((x,y)=>x-y); return s[Math.min(s.length-1, Math.floor(p*s.length))]; }
 // Tone 3 vs Tone 2 for a contour that ends higher than its lowest point. Positive = Tone 3.
