@@ -218,6 +218,7 @@ const I18N = {
     menuP1:'장애물마다 중국어 글자가 붙어 있어요. <b>소리 내어 읽으면</b>, 성조가 맞을 때 물고기가 그에 맞는 동작을 해요.',
     menuP2:'글자 카드에는 한자와 병음이 나오고, “말하세요” 안내 막대에는 뜻도 함께 나와요.',
     menuP3:'한 번에 한 음절씩 말하고 잠깐 멈추세요. 마이크가 없으면 키보드 1–4, 스페이스바는 일시정지예요.',
+    voiceTip:'오래 하면 목소리가 낮아지고 짧아지기 쉬워요. 1성은 계속 높게, 4성은 너무 짧지 않게!',
     slow:'느린 속도 (입문)', mid:'보통 속도', fast:'빠른 속도', start:'게임 시작',
     overTitle:'게임 종료', overScore:(s,b)=>`점수 <b>${s}</b> · 최장 연속 <b>${b}</b>`,
     thTone:'성조', thSaid:'말한 횟수', thOk:'목표 글자 정답',
@@ -282,6 +283,7 @@ const I18N = {
     menuP1:'Every obstacle carries a Chinese character. <b>Read it out loud</b>: if your tone is right, the fish makes the matching move.',
     menuP2:'Cards show the character and its pinyin; the “Say:” bar also shows its meaning.',
     menuP3:'Say one syllable at a time and pause briefly. No microphone? Use keys 1–4. Space pauses.',
+    voiceTip:'Over a long game the voice tends to get lower and shorter. Keep Tone 1 high, and do not cut Tone 4 short!',
     slow:'Slow speed (beginner)', mid:'Normal speed', fast:'Fast speed', start:'Start game',
     overTitle:'Game over', overScore:(s,b)=>`Score <b>${s}</b> · Best streak <b>${b}</b>`,
     thTone:'Tone', thSaid:'Times said', thOk:'Correct on target',
@@ -527,6 +529,7 @@ function logRec(heard, info, ignored, tgt, lenient){
   if(info){
     e.alt=info.alt ?? null; e.ambiguous=!!info.ambiguous;
     if(lenient) e.lenient=true;
+    if(info.knn) e.knn={dT:r2(info.knn.dT), dA:r2(info.knn.dA), pick:info.knn.pick};
     const c=info.contour||[], step=Math.max(1, c.length/24), c0=c[0]||0;   // ≤24 points, relative to the start
     e.dur=Math.round(info.dur); e.range=r2(info.range); e.s3=r2(info.s3);
     // absolute pitch (semitones above 55 Hz) and the voice range learned so far, so the range estimate can
@@ -618,11 +621,30 @@ function rebuildVoiceRange(){
   voiceHist.floor = lows.length>=3 ? Math.min(Math.min(...lows), pct(voiceHist.vals,0.9)-7) : null;
 }
 function pct(arr,p){ const s=[...arr].sort((x,y)=>x-y); return s[Math.min(s.length-1, Math.floor(p*s.length))]; }
-// Tone 1 height (hiLevel): the median pitch of recent syllables that were wanted AND heard as Tone 1, warm-up
-// cards included (kept apart from voiceHist, which leaves warm-up out). Last 10, needs 2+. A yardstick for
-// the voice range before voiceHist has learned it.
-const hiHist=[];
-const hiLevel = () => hiHist.length>=2 ? median(hiHist) : null;
+// Tone 1 height (hiLevel): from the median pitch of recent syllables that were wanted AND heard as Tone 1
+// without doubt (not ambiguous), warm-up cards included (kept apart from voiceHist, which leaves warm-up
+// out). Last 10, needs 2+. Uses their 75th percentile and moves at most 0.3 st per new sample: in log5 a
+// few lower, ambiguous Tone 1s late in the game pulled the median down 1.4 st and every relative height
+// with it.
+const hiHist=[]; let hiLev=null;
+function hiStep(hist, prev){
+  if(hist.length<2) return null;
+  const t=pct(hist,0.75);
+  return prev==null ? t : prev + Math.max(-0.3, Math.min(0.3, t-prev));
+}
+const hiLevel = () => hiLev;
+// Personal tone samples: syllables heard as the card's tone without doubt, last 8 per tone. When the rules
+// call a syllable ambiguous, the nearest samples choose between its tone and the runner-up. They follow the
+// player's voice as it drifts (lower, shorter) during a game. Features: absolute low point and start (st),
+// start-to-end change, dip, rise, and turn positions (x2, to weigh like semitones).
+const toneBank={1:[],2:[],3:[],4:[]};
+function knnVec(f, mnAbs){ return [mnAbs, mnAbs+f.down, f.up-f.down, f.down, f.up, 2*f.minPos, 2*f.maxPos]; }
+function knnPick(bank, v, tone, alt){
+  if(alt==null || bank[tone].length<3 || bank[alt].length<3) return null;
+  const dist = t => { const ds=bank[t].map(u=>Math.hypot(...u.map((x,i)=>x-v[i]))).sort((a,b)=>a-b); return (ds[0]+ds[1])/2; };
+  const dT=dist(tone), dA=dist(alt);
+  return {dT, dA, pick: dA < 0.75*dT ? alt : tone};   // switch only when clearly closer to the runner-up
+}
 // Tone 3 vs Tone 2 for a contour that ends higher than its lowest point. Positive = Tone 3.
 // Uses what listeners use: how late the turning point comes, how far the voice first drops,
 // how long it stays low (often creaky), whether that low point is the speaker's floor, and length.
@@ -634,7 +656,11 @@ function score3(f){
   if(f.relLow!=null) s += 0.5*(1.5 - Math.max(-2, Math.min(4, f.relLow)));
   // Floor not learned yet: measure the low point from the Tone 1 height instead. 6+ st under Tone 1 leans
   // Tone 3, only 3-5 st under leans Tone 2. Same weight and span as the relLow term (floor ≈ Tone 1 - 7).
-  else if(f.relLowHi!=null) s += 0.5*(-5.5 - Math.max(-9, Math.min(-3, f.relLowHi)));
+  else if(f.relLowHi!=null && !(f.hiN>=3)) s += 0.5*(-5.5 - Math.max(-9, Math.min(-3, f.relLowHi)));
+  // Tone 1 height solid (3+ samples): counts whether the floor is known or not. 5+ st under Tone 1 leans
+  // Tone 3 (log3: every Tone 3 low point -5.2..-7.7, Tone 2s -3.3..-5.0). Kept at 0.5: a creaky, badly
+  // tracked Tone 2 (红, -6.6) flips to Tone 3 above ~0.6.
+  if(f.relLowHi!=null && f.hiN>=3) s += 0.5*(-5 - Math.max(-8, Math.min(-3, f.relLowHi)));
   if(f.relDur!=null) s += 0.6*(Math.min(1.6, f.relDur) - 1.05);
   return s;
 }
@@ -715,21 +741,28 @@ function classify(all){
   const hi = hiLevel();
   const feats = {minPos, maxPos, down, up, lowFrac, creak, relLow: floor!=null ? mn-floor : null, relDur, relStart,
                  relSpkLow: known ? mn-spkLow : null,
-                 relLowHi: hi!=null ? mn-hi : null, relStartHi: hi!=null ? start-hi : null};
-  const {tone, s3, alt, ambiguous} = decideTone({...feats, range, dur});
+                 relLowHi: hi!=null ? mn-hi : null, relStartHi: hi!=null ? start-hi : null, hiN: hiHist.length};
+  let {tone, s3, alt, ambiguous} = decideTone({...feats, range, dur});
+  const kv = knnVec(feats, mn), knn = ambiguous ? knnPick(toneBank, kv, tone, alt) : null;
+  if(knn && knn.pick!==tone){ alt=tone; tone=knn.pick; }
   const tgt = (state==='play' && game) ? currentTarget() : null;
-  if(tone===1 && tgt && tgt.tone===1){ hiHist.push(median(wv)); if(hiHist.length>10) hiHist.shift(); }
+  if(tgt && tone===tgt.tone && !ambiguous){ const B=toneBank[tone]; B.push(kv); if(B.length>8) B.shift(); }
+  if(tone===1 && !ambiguous && tgt && tgt.tone===1){
+    hiHist.push(median(wv)); if(hiHist.length>10) hiHist.shift();
+    hiLev = hiStep(hiHist, hiLev);
+  }
   rememberVoice(wv, dur);
-  return {tone, contour:wv, dur, range, s3, alt, ambiguous, feats, vmask};
+  return {tone, contour:wv, dur, range, s3, alt, ambiguous, knn, feats, vmask};
 }
 // The tone decision, from the features only, so a copied recognition log can be replayed through it.
 // Besides the tone it says whether the call was a close one (ambiguous) and the runner-up tone (alt).
-const RULE_TH = () => ({flat:cfg.flat, rise2:2.0, rise08:0.8, fall4:-2.0});
+const RULE_TH = () => ({flat:cfg.flat, rise2:2.0, rise08:0.8, fall4:-2.0, hiSplit:-2, low3:-5});
 function decideTone(f){
   const th=RULE_TH(), {tone, s3} = decideCore(f, th);
   const {range, up, down, minPos, maxPos, creak} = f, d=up-down;
   let alt=null;
-  if(s3!=null && Math.abs(s3-0.3) < 0.6) alt = tone===3 ? 2 : 3;
+  if(tone===1 && f.dur < 120 && minPos >= 0.8 && maxPos <= 0.2) alt = 4;
+  else if(s3!=null && Math.abs(s3-0.3) < 0.6) alt = tone===3 ? 2 : 3;
   // Heard as Tone 1, but dips early and ends on a small rise: may be a Tone 2 said flat
   // (logs: 人 down 0.52 / up 0.98, 羊 down 0.94 / up 0.85 were Tone 2s heard as Tone 1).
   else if(tone===1 && up>=0.5 && up<=2.0 && minPos<0.5 && maxPos>=0.75 && maxPos>minPos && creak<0.2) alt = 2;
@@ -745,11 +778,27 @@ function decideTone(f){
       if(t2!==tone){ alt=t2; break; }
     }
   }
+  // Near the Tone 1 height splits: start within 0.5 st of -2 (1/4 vs 2/3 group), or a low-group low point
+  // within 0.5 st of -5 (2 vs 3).
+  if(alt==null && f.hiN>=3 && f.relStartHi!=null){
+    if(Math.abs(f.relStartHi-th.hiSplit) <= 0.5){
+      const t2 = decideCore(f, {...th, hiSplit: f.relStartHi>=th.hiSplit ? f.relStartHi+1e-3 : f.relStartHi}).tone;
+      if(t2!==tone) alt=t2;
+    } else if(f.relStartHi < th.hiSplit && f.relLowHi!=null && Math.abs(f.relLowHi-th.low3) <= 0.5 && (tone===2 || tone===3))
+      alt = tone===3 ? 2 : 3;
+  }
   return {tone, s3, alt, ambiguous: alt!=null};
 }
 function decideCore(f, th){
-  const {range, dur, minPos, maxPos, down, up, lowFrac, creak, relStart, relSpkLow, relStartHi} = f;
+  const {range, dur, minPos, maxPos, down, up, lowFrac, creak, relStart, relSpkLow, relStartHi, relLowHi} = f;
   const known = relStart!=null;
+  // Tone 1 height solid (3+ samples): where the syllable starts against it splits the tones in two groups
+  // (log3: Tone 1/4 start -1.0..+1.6 st from it, Tone 2/3 at -2.8..-7.5). High start: Tone 1 or 4 only;
+  // low start: Tone 2 or 3 only, a low point 5+ st under Tone 1 leaning Tone 3. The shape rules still pick
+  // within the group.
+  const hiOK = f.hiN>=3 && relStartHi!=null;
+  const lo = hiOK && relStartHi < th.hiSplit, hi = hiOK && !lo;
+  const lo3 = lo && relLowHi!=null && relLowHi <= th.low3;
   // Range not learned yet but Tone 1 height known: a small movement starting near Tone 1 height is a Tone 1
   // (log: 山, range 2.24, down 2.12, up 0.7 at the start of a game was heard as Tone 3).
   const nearHi = !known && relStartHi!=null && relStartHi >= -1.5 && range < 2.5 && creak < 0.3;
@@ -770,14 +819,14 @@ function decideCore(f, th){
     else if(fastFall) tone = (known && relStart <= -2) ? 3 : 4;
     // Little change but low in the voice: a half Tone 3, not a Tone 1 (Tone 1 is the high tone). Logged
     // Tone 1s start -1.2..+0.9 st from the middle of the voice, Tone 3s -3.3..-4.1.
-    else tone = (known && relStart <= -2.5) ? 3 : 1;
+    else tone = lo ? (lo3 ? 3 : 2) : (known && relStart <= -2.5) ? 3 : 1;
   } else if(up-down >= th.rise2 && down < 1.5 && creak < 0.3){
     // Ends 2+ st higher than it starts (end - start = up - down): Tone 2. In the logs Tone 3 never changed
     // more than ~1.7 st from start to end (雨 -1.6, 好 -1.1, 水 +1.5), Tone 2 rose up to 5.6 st.
     // Not when it first dips 1.5+ st (a full Tone 3 dips deep, logged Tone 2s at most 0.86 st) or is very
     // creaky (the Tone 3 low part may be missing).
     tone = 2;
-  } else if(up-down <= th.fall4 && up < 1.0 && !(known && relStart <= -2)){
+  } else if(up-down <= th.fall4 && up < 1.0 && !(known && relStart <= -2) && !lo){
     // Ends 2+ st lower than it starts: Tone 4. Not when it starts far down in the voice (no room for a
     // Tone 4 fall there: a Tone 3 said without the rise).
     tone = 4;
@@ -808,18 +857,18 @@ function decideCore(f, th){
       // Sags a little and comes back to about where it started: a Tone 1 (log: 星, 0.56 st dip, ends only
       // 0.8 st above the start). Tone 2 ends clearly higher (logged: 1.4 st or more). Low in the voice: Tone 3.
       tone = (known && relStart <= -2.5) ? 3 : 1;
-    } else if(up-down >= th.rise08 && down < 3.0 && up >= 1.5 && creak < 0.2){
+    } else if(up-down >= th.rise08 && down < 3.0 && up >= 1.5 && creak < 0.2 && !lo3){
       // Check-mark shape, small or big: a dip, then a rise that ends clearly (0.8+ st) above the start:
       // Tone 2, wherever the turn comes (logs: 门 0.91/2.03 turning at 47%, 学 0.73/1.80; big check marks
       // like 云/门 with a deeper dip were read as Tone 3). In all logs no Tone 3 ended 0.8+ st above its
       // start without heavy creak: 雨 1.61/1.71 (+0.1 st), 你/雨/水 end lower; 水 +1.5 and 草 have 31-47% creak.
       tone = 2;
-    } else if(up >= 1.8 && up > down && down < 1.6 && minPos < 0.4 && creak < 0.15){
+    } else if(up >= 1.8 && up > down && down < 1.6 && minPos < 0.4 && creak < 0.15 && !lo3){
       // Turns early and rises more than it dipped, ending above the start: Tone 2 (logs: 羊 1.45/1.95,
       // 鱼 1.14/2.46 st dip/rise, turning at 30-35%). Tone 3 turns later and moves less; a deep dip
       // (1.6+ st) is left to the score, as a full Tone 3 dips deep.
       tone = 2;
-    } else if(down < 1.0 && up >= Math.max(2.0, (creak < 0.15 ? 2 : 3)*down) && creak < 0.3){
+    } else if(down < 1.0 && up >= Math.max(2.0, (creak < 0.15 ? 2 : 3)*down) && creak < 0.3 && !lo3){
       // With almost no creak a rise of twice the dip is enough (log: 门 0.91/2.03 st, turning at 47%).
       // Barely dips, then rises a lot: Tone 2, wherever the turn comes. A Tone 2 often stays level for a while
       // and rises only at the end; the late low point and long low stretch made the Tone 3 score pick it
@@ -827,7 +876,7 @@ function decideCore(f, th){
       // dip first (雨 3.1 st) or rise only ~1.5 st (雨, 水). Heavy creak is left to the score: there the
       // Tone 3 low part may simply be missing.
       tone = 2;
-    } else if(down < 0.6 && minPos < 0.3 && creak < 0.4){
+    } else if(down < 0.6 && minPos < 0.3 && creak < 0.4 && !lo3){
       // rises from the start with no real dip: Tone 3 always drops first. Not when much of the syllable
       // was creaky (no pitch): then its low part is simply missing and the Tone 3 score below decides.
       tone = 2;
@@ -836,6 +885,11 @@ function decideCore(f, th){
       tone = s3 > 0.3 ? 3 : 2;
     }
   }
+  // Any other rule that left its group: a fall from a low start is a Tone 3 said without the rise, a level
+  // low syllable goes by its low point; a dip-rise from a high start is a Tone 1 (small) or Tone 4 (falls).
+  if(lo && tone===4) tone = 3;
+  else if(lo && tone===1) tone = lo3 ? 3 : 2;
+  else if(hi && (tone===2 || tone===3)){ tone = down-up >= 1.0 ? 4 : 1; s3 = null; }
   return {tone, s3};
 }
 
@@ -1472,6 +1526,7 @@ function renderOver(){
     <p>${L().bestStreak(game.best)}</p>
     <table class="stats"><tr><th>${L().thTone}</th><th>${L().thSaid}</th><th>${L().thOk}</th></tr>${rows}</table>
     <p>${L().overTip}</p>
+    <p>${L().voiceTip}</p>
     <div class="row main"><button id="again">↻ ${L().again}</button><button class="share" id="shareB">↗ ${L().share}</button></div>
     <p id="shareMsg"></p>
     <button class="link" id="menuB">${L().menu}</button>`;
